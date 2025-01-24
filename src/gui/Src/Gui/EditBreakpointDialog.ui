@@ -61,6 +61,9 @@
        <property name="text">
         <string>&amp;Break Condition:</string>
        </property>
+       <property name="openExternalLinks">
+        <bool>true</bool>
+       </property>
        <property name="buddy">
         <cstring>editBreakCondition</cstring>
        </property>
@@ -68,31 +71,19 @@
      </item>
      <item row="0" column="1">
       <widget class="QLineEdit" name="editBreakCondition">
-       <property name="maxLength">
-        <number>255</number>
+       <property name="placeholderText">
+        <string>Example: arg(0) == 123 (numbers are hex by default)</string>
        </property>
       </widget>
      </item>
      <item row="1" column="1">
-      <widget class="QLineEdit" name="editLogText">
-       <property name="maxLength">
-        <number>255</number>
-       </property>
-      </widget>
+      <widget class="QLineEdit" name="editLogText"/>
      </item>
      <item row="5" column="1">
-      <widget class="QLineEdit" name="editName">
-       <property name="maxLength">
-        <number>255</number>
-       </property>
-      </widget>
+      <widget class="QLineEdit" name="editName"/>
      </item>
      <item row="2" column="1">
-      <widget class="QLineEdit" name="editLogCondition">
-       <property name="maxLength">
-        <number>255</number>
-       </property>
-      </widget>
+      <widget class="QLineEdit" name="editLogCondition"/>
      </item>
      <item row="2" column="0">
       <widget class="QLabel" name="labelLogCondition">
@@ -131,11 +122,7 @@
       </widget>
      </item>
      <item row="3" column="1">
-      <widget class="QLineEdit" name="editCommandText">
-       <property name="maxLength">
-        <number>255</number>
-       </property>
-      </widget>
+      <widget class="QLineEdit" name="editCommandText"/>
      </item>
      <item row="6" column="1">
       <widget class="QSpinBox" name="spinHitCount">
@@ -174,16 +161,19 @@
       </widget>
      </item>
      <item row="4" column="1">
-      <widget class="QLineEdit" name="editCommandCondition">
-       <property name="maxLength">
-        <number>255</number>
-       </property>
-      </widget>
+      <widget class="QLineEdit" name="editCommandCondition"/>
      </item>
     </layout>
    </item>
    <item>
     <layout class="QHBoxLayout" name="layoutSaveCancel">
+     <item>
+      <widget class="QPushButton" name="buttonLogFile">
+       <property name="text">
+        <string>Log F&amp;ile...</string>
+       </property>
+      </widget>
+     </item>
      <item>
       <spacer name="horizontalSpacer">
        <property name="orientation">

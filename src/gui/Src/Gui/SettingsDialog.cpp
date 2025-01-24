@@ -52,45 +52,7 @@ void SettingsDialog::LoadSettings()
     Config()->save();
 
     //Defaults
-    memset(&settings, 0, sizeof(SettingsStruct));
-    settings.eventSystemBreakpoint = true;
-    settings.eventTlsCallbacks = true;
-    settings.eventEntryBreakpoint = true;
-    settings.eventExitBreakpoint = false;
-    settings.engineType = DebugEngineTitanEngine;
-    settings.engineCalcType = calc_unsigned;
-    settings.engineBreakpointType = break_int3short;
-    settings.engineUndecorateSymbolNames = true;
-    settings.engineEnableDebugPrivilege = true;
-    settings.engineEnableSourceDebugging = false;
-    settings.engineEnableTraceRecordDuringTrace = true;
-    settings.engineNoScriptTimeout = false;
-    settings.engineIgnoreInconsistentBreakpoints = false;
-    settings.engineNoWow64SingleStepWorkaround = false;
-    settings.engineMaxTraceCount = 50000;
-    settings.engineAnimateInterval = 50;
-    settings.engineHardcoreThreadSwitchWarning = false;
-    settings.engineVerboseExceptionLogging = true;
     settings.exceptionFilters = &realExceptionFilters;
-    settings.disasmArgumentSpaces = false;
-    settings.disasmHidePointerSizes = false;
-    settings.disasmHideNormalSegments = false;
-    settings.disasmMemorySpaces = false;
-    settings.disasmUppercase = false;
-    settings.disasmOnlyCipAutoComments = false;
-    settings.disasmTabBetweenMnemonicAndArguments = false;
-    settings.disasmNoCurrentModuleText = false;
-    settings.disasm0xPrefixValues = false;
-    settings.disasmNoBranchDisasmPreview = false;
-    settings.disasmNoSourceLineAutoComments = false;
-    settings.disasmAssembleOnDoubleClick = false;
-    settings.disasmMaxModuleSize = -1;
-    settings.guiNoForegroundWindow = true;
-    settings.guiLoadSaveTabOrder = true;
-    settings.guiDisableAutoComplete = false;
-    settings.guiAutoFollowInStack = false;
-    settings.guiHideSeasonalIcons = false;
-    settings.guiEnableQtHighDpiScaling = true;
 
     //Events tab
     GetSettingBool("Events", "SystemBreakpoint", &settings.eventSystemBreakpoint);
@@ -107,6 +69,7 @@ void SettingsDialog::LoadSettings()
     GetSettingBool("Events", "DllUnloadSystem", &settings.eventDllUnloadSystem);
     GetSettingBool("Events", "ThreadStart", &settings.eventThreadStart);
     GetSettingBool("Events", "ThreadEnd", &settings.eventThreadEnd);
+    GetSettingBool("Events", "ThreadNameSet", &settings.eventThreadNameSet);
     GetSettingBool("Events", "DebugStrings", &settings.eventDebugStrings);
     ui->chkSystemBreakpoint->setCheckState(bool2check(settings.eventSystemBreakpoint));
     ui->chkExitBreakpoint->setCheckState(bool2check(settings.eventExitBreakpoint));
@@ -122,6 +85,7 @@ void SettingsDialog::LoadSettings()
     ui->chkDllUnloadSystem->setCheckState(bool2check(settings.eventDllUnloadSystem));
     ui->chkThreadStart->setCheckState(bool2check(settings.eventThreadStart));
     ui->chkThreadEnd->setCheckState(bool2check(settings.eventThreadEnd));
+    ui->chkThreadNameSet->setCheckState(bool2check(settings.eventThreadNameSet));
     ui->chkDebugStrings->setCheckState(bool2check(settings.eventDebugStrings));
 
     //Engine tab
@@ -156,13 +120,13 @@ void SettingsDialog::LoadSettings()
     GetSettingBool("Engine", "EnableSourceDebugging", &settings.engineEnableSourceDebugging);
     GetSettingBool("Engine", "SaveDatabaseInProgramDirectory", &settings.engineSaveDatabaseInProgramDirectory);
     GetSettingBool("Engine", "DisableDatabaseCompression", &settings.engineDisableDatabaseCompression);
-    GetSettingBool("Engine", "TraceRecordEnabledDuringTrace", &settings.engineEnableTraceRecordDuringTrace);
     GetSettingBool("Engine", "SkipInt3Stepping", &settings.engineSkipInt3Stepping);
     GetSettingBool("Engine", "NoScriptTimeout", &settings.engineNoScriptTimeout);
     GetSettingBool("Engine", "IgnoreInconsistentBreakpoints", &settings.engineIgnoreInconsistentBreakpoints);
     GetSettingBool("Engine", "HardcoreThreadSwitchWarning", &settings.engineHardcoreThreadSwitchWarning);
     GetSettingBool("Engine", "VerboseExceptionLogging", &settings.engineVerboseExceptionLogging);
     GetSettingBool("Engine", "NoWow64SingleStepWorkaround", &settings.engineNoWow64SingleStepWorkaround);
+    GetSettingBool("Engine", "DisableAslr", &settings.engineDisableAslr);
     if(BridgeSettingGetUint("Engine", "MaxTraceCount", &cur))
         settings.engineMaxTraceCount = int(cur);
     if(BridgeSettingGetUint("Engine", "AnimateInterval", &cur))
@@ -202,13 +166,13 @@ void SettingsDialog::LoadSettings()
     ui->chkEnableSourceDebugging->setChecked(settings.engineEnableSourceDebugging);
     ui->chkSaveDatabaseInProgramDirectory->setChecked(settings.engineSaveDatabaseInProgramDirectory);
     ui->chkDisableDatabaseCompression->setChecked(settings.engineDisableDatabaseCompression);
-    ui->chkTraceRecordEnabledDuringTrace->setChecked(settings.engineEnableTraceRecordDuringTrace);
     ui->chkSkipInt3Stepping->setChecked(settings.engineSkipInt3Stepping);
     ui->chkNoScriptTimeout->setChecked(settings.engineNoScriptTimeout);
     ui->chkIgnoreInconsistentBreakpoints->setChecked(settings.engineIgnoreInconsistentBreakpoints);
     ui->chkHardcoreThreadSwitchWarning->setChecked(settings.engineHardcoreThreadSwitchWarning);
     ui->chkVerboseExceptionLogging->setChecked(settings.engineVerboseExceptionLogging);
     ui->chkNoWow64SingleStepWorkaround->setChecked(settings.engineNoWow64SingleStepWorkaround);
+    ui->chkDisableAslr->setChecked(settings.engineDisableAslr);
     ui->spinMaxTraceCount->setValue(settings.engineMaxTraceCount);
     ui->spinAnimateInterval->setValue(settings.engineAnimateInterval);
 
@@ -297,7 +261,6 @@ void SettingsDialog::LoadSettings()
     GetSettingBool("Gui", "FpuRegistersLittleEndian", &settings.guiFpuRegistersLittleEndian);
     GetSettingBool("Gui", "SaveColumnOrder", &settings.guiSaveColumnOrder);
     GetSettingBool("Gui", "NoCloseDialog", &settings.guiNoCloseDialog);
-    GetSettingBool("Gui", "PidTidInHex", &settings.guiPidTidInHex);
     GetSettingBool("Gui", "SidebarWatchLabels", &settings.guiSidebarWatchLabels);
     GetSettingBool("Gui", "NoForegroundWindow", &settings.guiNoForegroundWindow);
     GetSettingBool("Gui", "LoadSaveTabOrder", &settings.guiLoadSaveTabOrder);
@@ -308,10 +271,12 @@ void SettingsDialog::LoadSettings()
     GetSettingBool("Gui", "AutoFollowInStack", &settings.guiAutoFollowInStack);
     GetSettingBool("Gui", "NoSeasons", &settings.guiHideSeasonalIcons);
     GetSettingBool("Gui", "EnableQtHighDpiScaling", &settings.guiEnableQtHighDpiScaling);
+    GetSettingBool("Gui", "WindowLongPath", &settings.guiEnableWindowLongPath);
+    GetSettingBool("Gui", "NoIcons", &settings.guiNoIcons);
+    GetSettingBool("Gui", "AutoTraceDump", &settings.guiAutoTraceDump);
     ui->chkFpuRegistersLittleEndian->setChecked(settings.guiFpuRegistersLittleEndian);
     ui->chkSaveColumnOrder->setChecked(settings.guiSaveColumnOrder);
     ui->chkNoCloseDialog->setChecked(settings.guiNoCloseDialog);
-    ui->chkPidTidInHex->setChecked(settings.guiPidTidInHex);
     ui->chkSidebarWatchLabels->setChecked(settings.guiSidebarWatchLabels);
     ui->chkNoForegroundWindow->setChecked(settings.guiNoForegroundWindow);
     ui->chkSaveLoadTabOrder->setChecked(settings.guiLoadSaveTabOrder);
@@ -323,6 +288,9 @@ void SettingsDialog::LoadSettings()
     ui->chkHideSeasonalIcons->setChecked(settings.guiHideSeasonalIcons);
     ui->chkHideSeasonalIcons->setVisible(isSeasonal());
     ui->chkQtHighDpiScaling->setChecked(settings.guiEnableQtHighDpiScaling);
+    ui->chkWindowLongPath->setChecked(settings.guiEnableWindowLongPath);
+    ui->chkNoIcons->setChecked(settings.guiNoIcons);
+    ui->chkAutoTraceDump->setChecked(settings.guiAutoTraceDump);
 
     //Misc tab
     if(DbgFunctions()->GetJit)
@@ -333,7 +301,6 @@ void SettingsDialog::LoadSettings()
 #ifndef _WIN64
         isx64 = false;
 #endif
-        bool jit_auto_on;
         bool get_jit_works;
         get_jit_works = DbgFunctions()->GetJit(jit_entry, isx64);
         DbgFunctions()->GetDefJit(jit_def_entry);
@@ -350,18 +317,9 @@ void SettingsDialog::LoadSettings()
 
         ui->chkSetJIT->setCheckState(bool2check(settings.miscSetJIT));
 
-        bool get_jit_auto_works = DbgFunctions()->GetJitAuto(&jit_auto_on);
-        if(!get_jit_auto_works || !jit_auto_on)
-            settings.miscSetJITAuto = true;
-        else
-            settings.miscSetJITAuto = false;
-
-        ui->chkConfirmBeforeAtt->setCheckState(bool2check(settings.miscSetJITAuto));
-
         if(!BridgeIsProcessElevated())
         {
             ui->chkSetJIT->setDisabled(true);
-            ui->chkConfirmBeforeAtt->setDisabled(true);
             ui->lblAdminWarning->setText(QString(tr("<font color=\"red\"><b>Warning</b></font>: Run the debugger as Admin to enable JIT.")));
         }
         else
@@ -382,7 +340,6 @@ void SettingsDialog::LoadSettings()
         ui->editHelpOnSymbolicNameUrl->setText(QString(setting));
 
     bJitOld = settings.miscSetJIT;
-    bJitAutoOld = settings.miscSetJITAuto;
 
     GetSettingBool("Misc", "Utf16LogRedirect", &settings.miscUtf16LogRedirect);
     GetSettingBool("Misc", "UseLocalHelpFile", &settings.miscUseLocalHelpFile);
@@ -413,6 +370,7 @@ void SettingsDialog::SaveSettings()
     BridgeSettingSetUint("Events", "DllUnloadSystem", settings.eventDllUnloadSystem);
     BridgeSettingSetUint("Events", "ThreadStart", settings.eventThreadStart);
     BridgeSettingSetUint("Events", "ThreadEnd", settings.eventThreadEnd);
+    BridgeSettingSetUint("Events", "ThreadNameSet", settings.eventThreadNameSet);
     BridgeSettingSetUint("Events", "DebugStrings", settings.eventDebugStrings);
 
     //Engine tab
@@ -424,7 +382,6 @@ void SettingsDialog::SaveSettings()
     BridgeSettingSetUint("Engine", "EnableSourceDebugging", settings.engineEnableSourceDebugging);
     BridgeSettingSetUint("Engine", "SaveDatabaseInProgramDirectory", settings.engineSaveDatabaseInProgramDirectory);
     BridgeSettingSetUint("Engine", "DisableDatabaseCompression", settings.engineDisableDatabaseCompression);
-    BridgeSettingSetUint("Engine", "TraceRecordEnabledDuringTrace", settings.engineEnableTraceRecordDuringTrace);
     BridgeSettingSetUint("Engine", "SkipInt3Stepping", settings.engineSkipInt3Stepping);
     BridgeSettingSetUint("Engine", "NoScriptTimeout", settings.engineNoScriptTimeout);
     BridgeSettingSetUint("Engine", "IgnoreInconsistentBreakpoints", settings.engineIgnoreInconsistentBreakpoints);
@@ -433,6 +390,7 @@ void SettingsDialog::SaveSettings()
     BridgeSettingSetUint("Engine", "VerboseExceptionLogging", settings.engineVerboseExceptionLogging);
     BridgeSettingSetUint("Engine", "HardcoreThreadSwitchWarning", settings.engineHardcoreThreadSwitchWarning);
     BridgeSettingSetUint("Engine", "NoWow64SingleStepWorkaround", settings.engineNoWow64SingleStepWorkaround);
+    BridgeSettingSetUint("Engine", "DisableAslr", settings.engineDisableAslr);
 
     //Exceptions tab
     QString exceptionRange = "";
@@ -471,8 +429,7 @@ void SettingsDialog::SaveSettings()
     //Gui tab
     BridgeSettingSetUint("Gui", "FpuRegistersLittleEndian", settings.guiFpuRegistersLittleEndian);
     BridgeSettingSetUint("Gui", "SaveColumnOrder", settings.guiSaveColumnOrder);
-    BridgeSettingSetUint("Gui", "NoCloseDialog", settings.guiNoCloseDialog);
-    BridgeSettingSetUint("Gui", "PidTidInHex", settings.guiPidTidInHex);
+    BridgeSettingSetUint("Gui", "NoCloseDialog", settings.guiNoCloseDialog);;
     BridgeSettingSetUint("Gui", "SidebarWatchLabels", settings.guiSidebarWatchLabels);
     BridgeSettingSetUint("Gui", "NoForegroundWindow", settings.guiNoForegroundWindow);
     BridgeSettingSetUint("Gui", "LoadSaveTabOrder", settings.guiLoadSaveTabOrder);
@@ -483,6 +440,9 @@ void SettingsDialog::SaveSettings()
     BridgeSettingSetUint("Gui", "AutoFollowInStack", settings.guiAutoFollowInStack);
     BridgeSettingSetUint("Gui", "NoSeasons", settings.guiHideSeasonalIcons);
     BridgeSettingSetUint("Gui", "EnableQtHighDpiScaling", settings.guiEnableQtHighDpiScaling);
+    BridgeSettingSetUint("Gui", "WindowLongPath", settings.guiEnableWindowLongPath);
+    BridgeSettingSetUint("Gui", "NoIcons", settings.guiNoIcons);
+    BridgeSettingSetUint("Gui", "AutoTraceDump", settings.guiAutoTraceDump);
 
     //Misc tab
     if(DbgFunctions()->GetJit)
@@ -490,17 +450,13 @@ void SettingsDialog::SaveSettings()
         if(bJitOld != settings.miscSetJIT)
         {
             if(settings.miscSetJIT)
+            {
+                // Since Windows 10 WER will not trigger the JIT debugger at all without this
+                DbgCmdExec("setjitauto on");
                 DbgCmdExec("setjit oldsave");
+            }
             else
                 DbgCmdExec("setjit restore");
-        }
-
-        if(bJitAutoOld != settings.miscSetJITAuto)
-        {
-            if(!settings.miscSetJITAuto)
-                DbgCmdExec("setjitauto on");
-            else
-                DbgCmdExec("setjitauto off");
         }
     }
     if(settings.miscSymbolStore)
@@ -709,11 +665,6 @@ void SettingsDialog::on_chkThreadEntry_stateChanged(int arg1)
     settings.eventThreadEntry = arg1 != Qt::Unchecked;
 }
 
-void SettingsDialog::on_chkConfirmBeforeAtt_stateChanged(int arg1)
-{
-    settings.miscSetJITAuto = arg1 != Qt::Unchecked;
-}
-
 void SettingsDialog::on_chkSetJIT_stateChanged(int arg1)
 {
     if(arg1 == Qt::Unchecked)
@@ -731,13 +682,13 @@ void SettingsDialog::on_chkSetJIT_stateChanged(int arg1)
             if((DbgFunctions()->GetJit(NULL, true) == false) && (ui->editJIT->text() == qsjit_def_entry))
             {
                 /*
-                 * Only do this when the user wants uncheck the JIT and there are not an OLD JIT Stored
-                 * and the JIT in Windows registry its this debugger.
-                 * Scenario 1: the JIT in Windows registry its this debugger, if the database of the
-                 * debugger was removed and the user wants uncheck the JIT: he cant (this block its executed then)
+                 * Only do this when the user wants to uncheck the JIT and there is not an OLD JIT Stored
+                 * and the JIT in Windows registry is this debugger.
+                 * Scenario 1: the JIT in Windows registry is this debugger, if the database of the
+                 * debugger was removed and the user wants uncheck the JIT: they can't (this block its executed then)
                  * -
-                 * Scenario 2: the JIT in Windows registry its NOT this debugger, if the database of the debugger
-                 * was removed and the user in MISC tab wants check and uncheck the JIT checkbox: he can (this block its NOT executed then).
+                 * Scenario 2: the JIT in Windows registry is NOT this debugger, if the database of the debugger
+                 * was removed and the user in MISC tab wants check and uncheck the JIT checkbox: they can (this block its NOT executed then).
                 */
                 SimpleWarningBox(this, tr("ERROR NOT FOUND OLD JIT"), tr("NOT FOUND OLD JIT ENTRY STORED, USE SETJIT COMMAND"));
                 settings.miscSetJIT = true;
@@ -781,6 +732,11 @@ void SettingsDialog::on_chkThreadStart_stateChanged(int arg1)
 void SettingsDialog::on_chkThreadEnd_stateChanged(int arg1)
 {
     settings.eventThreadEnd = arg1 != Qt::Unchecked;
+}
+
+void SettingsDialog::on_chkThreadNameSet_stateChanged(int arg1)
+{
+    settings.eventThreadNameSet = arg1 != Qt::Unchecked;
 }
 
 void SettingsDialog::on_chkDebugStrings_stateChanged(int arg1)
@@ -863,12 +819,6 @@ void SettingsDialog::on_chkSaveDatabaseInProgramDirectory_stateChanged(int arg1)
 {
     settings.engineSaveDatabaseInProgramDirectory = arg1 == Qt::Checked;
 }
-
-void SettingsDialog::on_chkTraceRecordEnabledDuringTrace_stateChanged(int arg1)
-{
-    settings.engineEnableTraceRecordDuringTrace = arg1 == Qt::Checked;
-}
-
 void SettingsDialog::on_btnIgnoreRange_clicked()
 {
     ExceptionRangeDialog exceptionRange(this);
@@ -957,6 +907,7 @@ void SettingsDialog::on_radioDoNotBreak_clicked()
 
 void SettingsDialog::on_chkLogException_stateChanged(int arg1)
 {
+    Q_UNUSED(arg1);
     OnCurrentExceptionFilterSettingsChanged();
 }
 
@@ -1055,11 +1006,6 @@ void SettingsDialog::on_chkSkipInt3Stepping_toggled(bool checked)
     settings.engineSkipInt3Stepping = checked;
 }
 
-void SettingsDialog::on_chkPidTidInHex_clicked(bool checked)
-{
-    settings.guiPidTidInHex = checked;
-}
-
 void SettingsDialog::on_chkNoScriptTimeout_stateChanged(int arg1)
 {
     settings.engineNoScriptTimeout = arg1 != Qt::Unchecked;
@@ -1110,6 +1056,11 @@ void SettingsDialog::on_chkPermanentHighlightingMode_toggled(bool checked)
 void SettingsDialog::on_chkNoWow64SingleStepWorkaround_toggled(bool checked)
 {
     settings.engineNoWow64SingleStepWorkaround = checked;
+}
+
+void SettingsDialog::on_chkDisableAslr_toggled(bool checked)
+{
+    settings.engineDisableAslr = checked;
 }
 
 void SettingsDialog::on_chkNoCurrentModuleText_toggled(bool checked)
@@ -1198,3 +1149,17 @@ void SettingsDialog::on_chkQtHighDpiScaling_toggled(bool checked)
     settings.guiEnableQtHighDpiScaling = checked;
 }
 
+void SettingsDialog::on_chkWindowLongPath_toggled(bool checked)
+{
+    settings.guiEnableWindowLongPath = checked;
+}
+
+void SettingsDialog::on_chkNoIcons_toggled(bool checked)
+{
+    settings.guiNoIcons = checked;
+}
+
+void SettingsDialog::on_chkAutoTraceDump_toggled(bool checked)
+{
+    settings.guiAutoTraceDump = checked;
+}

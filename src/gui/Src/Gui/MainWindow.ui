@@ -150,6 +150,7 @@
      <string>&amp;Help</string>
     </property>
     <addaction name="actionCalculator"/>
+    <addaction name="actionMnemonic_Help"/>
     <addaction name="actionCheckUpdates"/>
     <addaction name="actionBlog"/>
     <addaction name="actionDonate"/>
@@ -167,7 +168,6 @@
     <property name="title">
      <string>&amp;Plugins</string>
     </property>
-    <addaction name="actionScylla"/>
    </widget>
    <widget class="QMenu" name="menuOptions">
     <property name="title">
@@ -204,7 +204,7 @@
     </property>
     <widget class="QMenu" name="menuTrace_record">
      <property name="title">
-      <string>Trace record</string>
+      <string>Trace &amp;coverage</string>
      </property>
      <property name="icon">
       <iconset theme="trace" resource="../../resource.qrc">
@@ -220,13 +220,13 @@
      <addaction name="actionTRTIIT"/>
      <addaction name="actionTRTOIT"/>
     </widget>
-    <addaction name="actionAnimateInto"/>
-    <addaction name="actionAnimateOver"/>
-    <addaction name="actionAnimateCommand"/>
-    <addaction name="separator"/>
     <addaction name="actionTicnd"/>
     <addaction name="actionTocnd"/>
     <addaction name="menuTrace_record"/>
+    <addaction name="separator"/>
+    <addaction name="actionAnimateInto"/>
+    <addaction name="actionAnimateOver"/>
+    <addaction name="actionAnimateCommand"/>
    </widget>
    <addaction name="menuFile"/>
    <addaction name="menuView"/>
@@ -771,10 +771,10 @@
      <normaloff>:/Default/icons/shortcut.png</normaloff>:/Default/icons/shortcut.png</iconset>
    </property>
    <property name="text">
-    <string>Shortcuts</string>
+    <string>Hotkeys</string>
    </property>
    <property name="statusTip">
-    <string>Open the Shortcuts dialog to customize keyboard shortcuts.</string>
+    <string>Open the Hotkeys dialog to customize keyboard hotkeys.</string>
    </property>
   </action>
   <action name="actionDonate">
@@ -789,7 +789,7 @@
     <string>Donate</string>
    </property>
    <property name="statusTip">
-    <string>Open http://donate.x64dbg.com</string>
+    <string>Open https://donate.x64dbg.com</string>
    </property>
   </action>
   <action name="actionCalculator">
@@ -888,7 +888,7 @@
     <string>Report Bug</string>
    </property>
    <property name="statusTip">
-    <string>Open http://report.x64dbg.com</string>
+    <string>Open https://report.x64dbg.com</string>
    </property>
   </action>
   <action name="actionSource">
@@ -915,7 +915,7 @@
     <string>&amp;Manual</string>
    </property>
    <property name="statusTip">
-    <string>Open the CHM manual or online documentation at http://help.x64dbg.com</string>
+    <string>Open the CHM manual or online documentation at https://help.x64dbg.com</string>
    </property>
   </action>
   <action name="actionFaq">
@@ -930,7 +930,7 @@
     <string>FAQ</string>
    </property>
    <property name="statusTip">
-    <string>Open http://faq.x64dbg.com</string>
+    <string>Open https://faq.x64dbg.com</string>
    </property>
   </action>
   <action name="actionSEHChain">
@@ -1035,7 +1035,7 @@
     <string>Bit</string>
    </property>
    <property name="statusTip">
-    <string>Enable trace record with 1 bit per byte to record whether the code has been executed.</string>
+    <string>Enable trace coverage with 1 bit (whether an instruction was executed or not)</string>
    </property>
   </action>
   <action name="actionTRByte">
@@ -1047,7 +1047,7 @@
     <string>Byte</string>
    </property>
    <property name="statusTip">
-    <string>Enable trace record with 1 byte per byte to record how many times the code has been executed.</string>
+    <string>Enable trace coverage with 1 byte to record how many times an instruction has been executed.</string>
    </property>
   </action>
   <action name="actionTRWord">
@@ -1059,7 +1059,7 @@
     <string>Word</string>
    </property>
    <property name="statusTip">
-    <string>Enable trace record with 2 bytes per byte to record how many times the code has been executed.</string>
+    <string>Enable trace coverage with 1 word to record how many times an instruction has been executed.</string>
    </property>
   </action>
   <action name="actionTRTIBT">
@@ -1068,10 +1068,10 @@
      <normaloff>:/Default/icons/traceinto.png</normaloff>:/Default/icons/traceinto.png</iconset>
    </property>
    <property name="text">
-    <string>Trace into beyond trace record</string>
+    <string>Step into until reaching uncovered code</string>
    </property>
    <property name="statusTip">
-    <string>Trace into until the current instruction was not executed before. Equivalent command &quot;tibt&quot;</string>
+    <string>Step into until reaching an instruction that was not covered before. Equivalent command &quot;tibt&quot;</string>
    </property>
   </action>
   <action name="actionTRTOBT">
@@ -1080,10 +1080,10 @@
      <normaloff>:/Default/icons/traceover.png</normaloff>:/Default/icons/traceover.png</iconset>
    </property>
    <property name="text">
-    <string>Trace over beyond trace record</string>
+    <string>Step over until reaching uncovered code</string>
    </property>
    <property name="statusTip">
-    <string>Trace over until the current instruction was not executed before. Equivalent command &quot;tobt&quot;</string>
+    <string>Step over until reaching an instruction that was not covered before. Equivalent command &quot;tobt&quot;</string>
    </property>
   </action>
   <action name="actionTRTIIT">
@@ -1092,10 +1092,10 @@
      <normaloff>:/Default/icons/arrow-step-into.png</normaloff>:/Default/icons/arrow-step-into.png</iconset>
    </property>
    <property name="text">
-    <string>Trace into into trace record</string>
+    <string>Step into until reaching covered code</string>
    </property>
    <property name="statusTip">
-    <string>Trace into until the current instruction was executed before. Equivalent command &quot;tiit&quot;</string>
+    <string>Step into until reaching an instruction that has been covered before. Equivalent command &quot;tiit&quot;</string>
    </property>
   </action>
   <action name="actionTRTOIT">
@@ -1104,10 +1104,10 @@
      <normaloff>:/Default/icons/arrow-step-over.png</normaloff>:/Default/icons/arrow-step-over.png</iconset>
    </property>
    <property name="text">
-    <string>Trace over into trace record</string>
+    <string>Step over until reaching covered code</string>
    </property>
    <property name="statusTip">
-    <string>Trace over until the current instruction was executed before. Equivalent command &quot;toit&quot;</string>
+    <string>Step over until reaching an instruction that has been covered before. Equivalent command &quot;toit&quot;</string>
    </property>
   </action>
   <action name="actionTRNone">
@@ -1116,10 +1116,10 @@
      <normaloff>:/Default/icons/close-all-tabs.png</normaloff>:/Default/icons/close-all-tabs.png</iconset>
    </property>
    <property name="text">
-    <string>None</string>
+    <string>Disable</string>
    </property>
    <property name="statusTip">
-    <string>Disable trace record</string>
+    <string>Disable trace coverage</string>
    </property>
   </action>
   <action name="actionRtu">
@@ -1248,7 +1248,7 @@
     <string>Blog</string>
    </property>
    <property name="statusTip">
-    <string>Open http://blog.x64dbg.com</string>
+    <string>Open https://blog.x64dbg.com</string>
    </property>
   </action>
   <action name="actionAnimateInto">
@@ -1437,7 +1437,7 @@
     <string>Plugins</string>
    </property>
    <property name="statusTip">
-    <string>Open http://plugins.x64dbg.com</string>
+    <string>Open https://plugins.x64dbg.com</string>
    </property>
   </action>
   <action name="actionTrace">
@@ -1534,6 +1534,19 @@
    </property>
    <property name="statusTip">
     <string>Display information about Qt</string>
+   </property>
+  </action>
+  <action name="actionMnemonic_Help">
+   <property name="icon">
+    <iconset>
+     <normalon>:/Default/icons/helpmnemonic.png</normalon>
+    </iconset>
+   </property>
+   <property name="text">
+    <string>Mnemonic Help</string>
+   </property>
+   <property name="statusTip">
+    <string>Output the detailed help information about an assembly mnemonic to the log. Equivalent command &quot;mnemonichelp name&quot;.</string>
    </property>
   </action>
  </widget>

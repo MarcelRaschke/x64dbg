@@ -17,7 +17,7 @@ class StructWidget : public QWidget, public ActionHelper<StructWidget>
     Q_OBJECT
 
 public:
-    explicit StructWidget(QWidget* parent = 0);
+    explicit StructWidget(QWidget* parent = nullptr);
     ~StructWidget();
     void saveWindowSettings();
     void loadWindowSettings();
@@ -36,11 +36,21 @@ private:
     Ui::StructWidget* ui;
     MenuBuilder* mMenuBuilder;
     GotoDialog* mGotoDialog = nullptr;
+    QColor mTextColor;
 
     void setupColumns();
     void setupContextMenu();
     QString highlightTypeName(QString name) const;
     duint selectedValue() const;
+
+    enum
+    {
+        ColField,
+        ColOffset,
+        ColAddress,
+        ColSize,
+        ColValue,
+    };
 
 private slots:
     void on_treeWidget_customContextMenuRequested(const QPoint & pos);
@@ -55,4 +65,5 @@ private slots:
     void parseFileSlot();
     void changeAddrSlot();
     void refreshSlot();
+    void copyColumnSlot();
 };

@@ -7,10 +7,12 @@
 #include "_global.h"
 #include "bridgemain.h"
 #include <stdio.h>
+#include <ShlObj.h>
 #include "Utf8Ini.h"
 
 static HINSTANCE hInst;
 static Utf8Ini settings;
+static wchar_t szUserDirectory[MAX_PATH] = L"";
 static wchar_t szIniFile[MAX_PATH] = L"";
 static CRITICAL_SECTION csIni;
 static CRITICAL_SECTION csTranslate;
@@ -30,9 +32,7 @@ static bool bDisableGUIUpdate;
 
 #define LOADLIBRARY(name) \
     szLib=name; \
-    hInst=LoadLibraryW(name); \
-    if(!hInst) \
-        return L"Error loading library \"" name L"\"!"
+    hInst=BridgeLoadLibraryCheckedW(name, false);
 
 #define LOADEXPORT(name) \
     *((FARPROC*)&name)=GetProcAddress(hInst, #name); \
@@ -42,34 +42,160 @@ static bool bDisableGUIUpdate;
         return szError; \
     }
 
+static std::wstring Utf8ToUtf16(const char* str)
+{
+    std::wstring convertedString;
+    if(!str || !*str)
+        return convertedString;
+    int requiredSize = MultiByteToWideChar(CP_UTF8, 0, str, -1, nullptr, 0);
+    if(requiredSize > 0)
+    {
+        convertedString.resize(requiredSize - 1);
+        if(!MultiByteToWideChar(CP_UTF8, 0, str, -1, (wchar_t*)convertedString.c_str(), requiredSize))
+            convertedString.clear();
+    }
+    return convertedString;
+}
+
+static bool DirExists(const wchar_t* dir)
+{
+    DWORD attrib = GetFileAttributesW(dir);
+    return (attrib != INVALID_FILE_ATTRIBUTES && (attrib & FILE_ATTRIBUTE_DIRECTORY) != 0);
+}
+
+static decltype(&BridgeLoadLibraryCheckedW) pLoadLibraryCheckedW;
+static decltype(&BridgeLoadLibraryCheckedA) pLoadLibraryCheckedA;
+
+static const wchar_t* InitializeUserDirectory()
+{
+    // Handle user directory
+    if(!GetModuleFileNameW(0, szUserDirectory, _countof(szUserDirectory)))
+        return L"Error getting module path!";
+
+    auto backslash = wcsrchr(szUserDirectory, L'\\');
+    if(backslash == nullptr)
+        return L"Error getting module directory!";
+
+    *backslash = L'\0';
+
+    // Set the current directory to the application directory
+    SetCurrentDirectoryW(szUserDirectory);
+
+    // Extract the file name of the x64dbg executable (without extension)
+    auto fileNameWithoutExtension = backslash + 1;
+    auto period = wcschr(fileNameWithoutExtension, L'.');
+    if(period != nullptr)
+    {
+        *period = L'\0';
+    }
+
+    wchar_t szFolderRedirect[MAX_PATH];
+    wcscpy_s(szFolderRedirect, szUserDirectory);
+    wcscat_s(szFolderRedirect, L"\\userdir");
+
+    std::wstring userDirUtf16;
+    {
+        std::vector<char> userDirUtf8;
+        auto hFile = CreateFileW(szFolderRedirect, GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, 0, nullptr);
+        if(hFile != INVALID_HANDLE_VALUE)
+        {
+            auto size = GetFileSize(hFile, nullptr);
+            userDirUtf8.resize(size + 1);
+            DWORD read = 0;
+            if(!ReadFile(hFile, userDirUtf8.data(), size, &read, nullptr))
+                userDirUtf8.clear();
+            CloseHandle(hFile);
+            userDirUtf16 = Utf8ToUtf16(userDirUtf8.data());
+        }
+        else
+        {
+            userDirUtf16 = szUserDirectory;
+        }
+    }
+
+    if(userDirUtf16.empty())
+    {
+        wchar_t szAppData[MAX_PATH] = L"";
+        if(!SUCCEEDED(SHGetFolderPathW(nullptr, CSIDL_APPDATA, nullptr, 0, szAppData)))
+            return L"Error getting AppData path";
+        userDirUtf16 = szAppData;
+        if(userDirUtf16.back() != L'\\')
+            userDirUtf16 += L'\\';
+        userDirUtf16 += fileNameWithoutExtension;
+        CreateDirectoryW(userDirUtf16.c_str(), nullptr);
+    }
+    else
+    {
+        if(userDirUtf16.back() == L'\\')
+            userDirUtf16.pop_back();
+    }
+
+    if(!DirExists(userDirUtf16.c_str()))
+        return L"Specified user directory doesn't exist";
+
+    // Read the settings from the INI
+    wcscpy_s(szIniFile, userDirUtf16.c_str());
+    wcscat_s(szIniFile, L"\\");
+    wcscat_s(szIniFile, fileNameWithoutExtension);
+    wcscat_s(szIniFile, L".ini");
+    BridgeSettingRead(nullptr);
+
+    wcscpy_s(szUserDirectory, userDirUtf16.c_str());
+    return nullptr;
+}
+
 BRIDGE_IMPEXP const wchar_t* BridgeInit()
 {
     //Initialize critial section
     InitializeCriticalSection(&csIni);
     InitializeCriticalSection(&csTranslate);
 
-    //Settings load
-    if(!GetModuleFileNameW(0, szIniFile, MAX_PATH))
-        return L"Error getting module path!";
-    int len = (int)wcslen(szIniFile);
-    while(szIniFile[len] != L'.' && szIniFile[len] != L'\\' && len)
-        len--;
-    if(szIniFile[len] == L'\\')
-        wcscat_s(szIniFile, L".ini");
-    else
-        wcscpy_s(&szIniFile[len], _countof(szIniFile) - len, L".ini");
+    // Signature checking functions
+    auto hMainModule = GetModuleHandleW(nullptr);
+    pLoadLibraryCheckedW = (decltype(pLoadLibraryCheckedW))GetProcAddress(hMainModule, "LoadLibraryCheckedW");
+    pLoadLibraryCheckedA = (decltype(pLoadLibraryCheckedA))GetProcAddress(hMainModule, "LoadLibraryCheckedA");
+    if(pLoadLibraryCheckedW == nullptr || pLoadLibraryCheckedA == nullptr)
+        return L"Error finding safe library loading functions!";
 
+    auto userDirectoryError = InitializeUserDirectory();
+    if(userDirectoryError != nullptr)
+        return userDirectoryError;
+
+    // Variables used by the macros below
     HINSTANCE hInst;
     const wchar_t* szLib;
     static wchar_t szError[256] = L"";
 
-    //GUI Load
-    LOADLIBRARY(gui_lib);
-    LOADEXPORT(_gui_guiinit);
-    LOADEXPORT(_gui_sendmessage);
-    LOADEXPORT(_gui_translate_text);
+    auto titanEngineDll = []()
+    {
+        switch(DbgGetDebugEngine())
+        {
+        case DebugEngineGleeBug:
+            return L"GleeBug\\TitanEngine.dll";
+        case DebugEngineStaticEngine:
+            return L"StaticEngine\\TitanEngine.dll";
+        default:
+            return L"TitanEngine.dll";
+        }
+    }();
 
-    //DBG Load
+    auto loadIfExists = [&](const wchar_t* szDll)
+    {
+        BridgeLoadLibraryCheckedW(szDll, true);
+    };
+
+    // Imported DLLs (DBG)
+    LOADLIBRARY(titanEngineDll);
+    LOADLIBRARY(L"LLVMDemangle.dll");
+    LOADLIBRARY(L"lz4.dll");
+    LOADLIBRARY(L"jansson.dll");
+    LOADLIBRARY(L"DeviceNameResolver.dll");
+    LOADLIBRARY(L"XEDParse.dll");
+    //loadIfExists(L"asmjit.dll"); // only loaded with user interaction
+    //loadIfExists(L"Scylla.dll"); // only loaded with user interaction
+    loadIfExists(L"msdia140.dll");
+
+    // DBG
     LOADLIBRARY(dbg_lib);
     LOADEXPORT(_dbg_dbginit);
     LOADEXPORT(_dbg_memfindbaseaddr);
@@ -92,15 +218,58 @@ BRIDGE_IMPEXP const wchar_t* BridgeInit()
     LOADEXPORT(_dbg_dbgcmddirectexec);
     LOADEXPORT(_dbg_getbranchdestination);
     LOADEXPORT(_dbg_sendmessage);
+
+    // Imported DLLs (GUI)
+    LOADLIBRARY(L"ldconvert.dll");
+    loadIfExists(L"Qt5Core.dll");
+    loadIfExists(L"Qt5Gui.dll");
+    loadIfExists(L"Qt5WinExtras.dll");
+    loadIfExists(L"Qt5Widgets.dll");
+    loadIfExists(L"Qt5Network.dll");
+    loadIfExists(L"platforms\\qwindows.dll");
+    loadIfExists(L"imageformats\\qgif.dll");
+    loadIfExists(L"imageformats\\qicns.dll");
+    loadIfExists(L"imageformats\\qico.dll");
+    loadIfExists(L"imageformats\\qjpeg.dll");
+    loadIfExists(L"Qt5Svg.dll");
+    loadIfExists(L"imageformats\\qsvg.dll");
+    loadIfExists(L"imageformats\\qtga.dll");
+    loadIfExists(L"imageformats\\qtiff.dll");
+    loadIfExists(L"imageformats\\qwbmp.dll");
+    loadIfExists(L"imageformats\\qwebp.dll");
+    loadIfExists(L"bearer\\qgenericbearer.dll");
+    loadIfExists(L"bearer\\qnativewifibearer.dll");
+    loadIfExists(L"iconengines\\qsvgicon.dll");
+    loadIfExists(L"libeay32.dll");
+    loadIfExists(L"ssleay32.dll");
+
+    // GUI
+    LOADLIBRARY(gui_lib);
+    LOADEXPORT(_gui_guiinit);
+    LOADEXPORT(_gui_sendmessage);
+    LOADEXPORT(_gui_translate_text);
+
+    // Backwards compatibility
+    BridgeLoadLibraryCheckedW(L"x64_bridge.dll", true);
+    BridgeLoadLibraryCheckedW(L"x64_dbg.dll", true);
+
     return 0;
+}
+
+BRIDGE_IMPEXP HMODULE WINAPI BridgeLoadLibraryCheckedW(const wchar_t* szDll, bool allowFailure)
+{
+    return pLoadLibraryCheckedW(szDll, allowFailure);
+}
+
+BRIDGE_IMPEXP HMODULE WINAPI BridgeLoadLibraryCheckedA(const char* szDll, bool allowFailure)
+{
+    return pLoadLibraryCheckedA(szDll, allowFailure);
 }
 
 BRIDGE_IMPEXP const wchar_t* BridgeStart()
 {
     if(!_dbg_dbginit || !_gui_guiinit)
         return L"\"_dbg_dbginit\" || \"_gui_guiinit\" was not loaded yet, call BridgeInit!";
-    int errorLine = 0;
-    BridgeSettingRead(&errorLine);
     _dbg_sendmessage(DBG_INITIALIZE_LOCKS, nullptr, nullptr); //initialize locks before any other thread than the main thread are started
     _gui_guiinit(0, 0); //remove arguments
     if(!BridgeSettingFlush())
@@ -125,7 +294,7 @@ BRIDGE_IMPEXP void* BridgeAlloc(size_t size)
 
 BRIDGE_IMPEXP void BridgeFree(void* ptr)
 {
-    if(ptr)
+    if(ptr != nullptr)
         GlobalFree(ptr);
 }
 
@@ -266,21 +435,32 @@ BRIDGE_IMPEXP bool BridgeIsProcessElevated()
     return !!IsAdminMember;
 }
 
+static DWORD BridgeGetNtBuildNumberWindows7()
+{
+    auto p_RtlGetVersion = (NTSTATUS(WINAPI*)(PRTL_OSVERSIONINFOW))GetProcAddress(GetModuleHandleW(L"ntdll.dll"), "RtlGetVersion");
+    RTL_OSVERSIONINFOW info = { sizeof(info) };
+    if(p_RtlGetVersion && p_RtlGetVersion(&info) == 0)
+        return info.dwBuildNumber;
+    else
+        return 0;
+}
+
 BRIDGE_IMPEXP unsigned int BridgeGetNtBuildNumber()
 {
     // https://www.vergiliusproject.com/kernels/x64/Windows%2010%20%7C%202016/1507%20Threshold%201/_KUSER_SHARED_DATA
-    auto NtBuildNumber = *(unsigned int*)(0x7FFE0000 + 0x260);
+    auto NtBuildNumber = *(DWORD*)(0x7FFE0000 + 0x260);
     if(NtBuildNumber == 0)
     {
         // Older versions of Windows
-        static auto p_RtlGetVersion = (NTSTATUS(*)(PRTL_OSVERSIONINFOW))GetProcAddress(GetModuleHandleW(L"ntdll.dll"), "RtlGetVersion");
-        RTL_OSVERSIONINFOW info = { sizeof(info) };
-        if(p_RtlGetVersion && p_RtlGetVersion(&info) == 0)
-        {
-            NtBuildNumber = info.dwBuildNumber;
-        }
+        static DWORD NtBuildNumber7 = BridgeGetNtBuildNumberWindows7();
+        NtBuildNumber = NtBuildNumber7;
     }
     return NtBuildNumber;
+}
+
+BRIDGE_IMPEXP const wchar_t* BridgeUserDirectory()
+{
+    return szUserDirectory;
 }
 
 BRIDGE_IMPEXP bool DbgMemRead(duint va, void* dest, duint size)
@@ -661,23 +841,35 @@ BRIDGE_IMPEXP bool DbgScriptGetBranchInfo(int line, SCRIPTBRANCH* info)
 }
 
 // FIXME all
-BRIDGE_IMPEXP void DbgSymbolEnum(duint base, CBSYMBOLENUM cbSymbolEnum, void* user)
+BRIDGE_IMPEXP bool DbgSymbolEnum(duint base, CBSYMBOLENUM cbSymbolEnum, void* user)
 {
     SYMBOLCBINFO cbInfo;
     cbInfo.base = base;
     cbInfo.cbSymbolEnum = cbSymbolEnum;
     cbInfo.user = user;
-    _dbg_sendmessage(DBG_SYMBOL_ENUM, &cbInfo, 0);
+    // These fields are ignored if base != -1, but set them anyway to be safe
+    cbInfo.start = 0;
+    cbInfo.end = -1;
+    cbInfo.symbolMask = SYMBOL_MASK_ALL;
+    return !!_dbg_sendmessage(DBG_SYMBOL_ENUM, &cbInfo, 0);
 }
 
 // FIXME all
-BRIDGE_IMPEXP void DbgSymbolEnumFromCache(duint base, CBSYMBOLENUM cbSymbolEnum, void* user)
+BRIDGE_IMPEXP bool DbgSymbolEnumFromCache(duint base, CBSYMBOLENUM cbSymbolEnum, void* user)
+{
+    return DbgSymbolEnum(base, cbSymbolEnum, user);
+}
+
+BRIDGE_IMPEXP bool DbgSymbolEnumRange(duint start, duint end, unsigned int symbolMask, CBSYMBOLENUM cbSymbolEnum, void* user)
 {
     SYMBOLCBINFO cbInfo;
-    cbInfo.base = base;
+    cbInfo.base = -1; // This indicates that start/end/mask is used
     cbInfo.cbSymbolEnum = cbSymbolEnum;
     cbInfo.user = user;
-    _dbg_sendmessage(DBG_SYMBOL_ENUM_FROMCACHE, &cbInfo, 0);
+    cbInfo.start = start;
+    cbInfo.end = end;
+    cbInfo.symbolMask = symbolMask;
+    return !!_dbg_sendmessage(DBG_SYMBOL_ENUM, &cbInfo, 0);
 }
 
 BRIDGE_IMPEXP bool DbgAssembleAt(duint addr, const char* instruction)
@@ -1057,7 +1249,7 @@ BRIDGE_IMPEXP void DbgDelEncodeTypeSegment(duint start)
 
 BRIDGE_IMPEXP void DbgSelChanged(int hWindow, duint VA)
 {
-    _dbg_sendmessage(DBG_SELCHANGED, (void*)hWindow, (void*)VA);
+    _dbg_sendmessage(DBG_SELCHANGED, (void*)(duint)hWindow, (void*)VA);
 }
 
 BRIDGE_IMPEXP HANDLE DbgGetProcessHandle()
@@ -1082,12 +1274,12 @@ BRIDGE_IMPEXP DWORD DbgGetThreadId()
 
 BRIDGE_IMPEXP duint DbgGetPebAddress(DWORD ProcessId)
 {
-    return (duint)_dbg_sendmessage(DBG_GET_PEB_ADDRESS, (void*)ProcessId, nullptr);
+    return (duint)_dbg_sendmessage(DBG_GET_PEB_ADDRESS, (void*)(duint)ProcessId, nullptr);
 }
 
 BRIDGE_IMPEXP duint DbgGetTebAddress(DWORD ThreadId)
 {
-    return (duint)_dbg_sendmessage(DBG_GET_TEB_ADDRESS, (void*)ThreadId, nullptr);
+    return (duint)_dbg_sendmessage(DBG_GET_TEB_ADDRESS, (void*)(duint)ThreadId, nullptr);
 }
 
 BRIDGE_IMPEXP bool DbgAnalyzeFunction(duint entry, BridgeCFGraphList* graph)
@@ -1116,7 +1308,22 @@ BRIDGE_IMPEXP void DbgGetSymbolInfo(const SYMBOLPTR* symbolptr, SYMBOLINFO* info
 
 BRIDGE_IMPEXP DEBUG_ENGINE DbgGetDebugEngine()
 {
-    return (DEBUG_ENGINE)_dbg_sendmessage(DBG_GET_DEBUG_ENGINE, nullptr, nullptr);
+    duint setting = DebugEngineTitanEngine;
+    if(!BridgeSettingGetUint("Engine", "DebugEngine", &setting))
+    {
+        BridgeSettingSetUint("Engine", "DebugEngine", setting);
+    }
+    return (DEBUG_ENGINE)setting;
+}
+
+BRIDGE_IMPEXP bool DbgGetSymbolInfoAt(duint addr, SYMBOLINFO* info)
+{
+    return !!_dbg_sendmessage(DBG_GET_SYMBOL_INFO_AT, (void*)addr, info);
+}
+
+BRIDGE_IMPEXP duint DbgXrefAddMulti(const XREF_EDGE* edges, duint count)
+{
+    return (duint)_dbg_sendmessage(DBG_XREF_ADD_MULTI, (void*)edges, (void*)count);
 }
 
 BRIDGE_IMPEXP const char* GuiTranslateText(const char* Source)
@@ -1155,6 +1362,21 @@ BRIDGE_IMPEXP void GuiAddLogMessageHtml(const char* msg)
 BRIDGE_IMPEXP void GuiLogClear()
 {
     _gui_sendmessage(GUI_CLEAR_LOG, 0, 0);
+}
+
+BRIDGE_IMPEXP void GuiLogSave(const char* filename)
+{
+    _gui_sendmessage(GUI_SAVE_LOG, (void*)filename, 0);
+}
+
+BRIDGE_IMPEXP void GuiLogRedirect(const char* filename)
+{
+    _gui_sendmessage(GUI_REDIRECT_LOG, (void*)filename, 0);
+}
+
+BRIDGE_IMPEXP void GuiLogRedirectStop()
+{
+    _gui_sendmessage(GUI_STOP_REDIRECT_LOG, 0, 0);
 }
 
 BRIDGE_IMPEXP void GuiUpdateEnable(bool updateNow)
@@ -1316,7 +1538,7 @@ BRIDGE_IMPEXP int GuiReferenceGetRowCount()
 
 BRIDGE_IMPEXP int GuiReferenceSearchGetRowCount()
 {
-    return int(_gui_sendmessage(GUI_REF_SEARCH_GETROWCOUNT, 0, 0));
+    return (int)(duint)_gui_sendmessage(GUI_REF_SEARCH_GETROWCOUNT, 0, 0);
 }
 
 BRIDGE_IMPEXP void GuiReferenceDeleteAllColumns()
@@ -1345,7 +1567,7 @@ BRIDGE_IMPEXP char* GuiReferenceGetCellContent(int row, int col)
 
 BRIDGE_IMPEXP char* GuiReferenceSearchGetCellContent(int row, int col)
 {
-    return (char*)_gui_sendmessage(GUI_REF_SEARCH_GETCELLCONTENT, (void*)row, (void*)col);
+    return (char*)_gui_sendmessage(GUI_REF_SEARCH_GETCELLCONTENT, (void*)(duint)row, (void*)(duint)col);
 }
 
 BRIDGE_IMPEXP void GuiReferenceReloadData()
@@ -1519,42 +1741,48 @@ BRIDGE_IMPEXP void GuiLoadSourceFileEx(const char* path, duint addr)
 
 BRIDGE_IMPEXP void GuiMenuSetIcon(int hMenu, const ICONDATA* icon)
 {
-    _gui_sendmessage(GUI_MENU_SET_ICON, (void*)hMenu, (void*)icon);
+    _gui_sendmessage(GUI_MENU_SET_ICON, (void*)(duint)hMenu, (void*)icon);
 }
 
 BRIDGE_IMPEXP void GuiMenuSetEntryIcon(int hEntry, const ICONDATA* icon)
 {
-    _gui_sendmessage(GUI_MENU_SET_ENTRY_ICON, (void*)hEntry, (void*)icon);
+    _gui_sendmessage(GUI_MENU_SET_ENTRY_ICON, (void*)(duint)hEntry, (void*)icon);
 }
 
 BRIDGE_IMPEXP void GuiMenuSetEntryChecked(int hEntry, bool checked)
 {
-    _gui_sendmessage(GUI_MENU_SET_ENTRY_CHECKED, (void*)hEntry, (void*)checked);
+    _gui_sendmessage(GUI_MENU_SET_ENTRY_CHECKED, (void*)(duint)hEntry, (void*)(duint)checked);
 }
 
 BRIDGE_IMPEXP void GuiMenuSetVisible(int hMenu, bool visible)
 {
-    _gui_sendmessage(GUI_MENU_SET_VISIBLE, (void*)hMenu, (void*)visible);
+    _gui_sendmessage(GUI_MENU_SET_VISIBLE, (void*)(duint)hMenu, (void*)(duint)visible);
 }
 
 BRIDGE_IMPEXP void GuiMenuSetEntryVisible(int hEntry, bool visible)
 {
-    _gui_sendmessage(GUI_MENU_SET_ENTRY_VISIBLE, (void*)hEntry, (void*)visible);
+    _gui_sendmessage(GUI_MENU_SET_ENTRY_VISIBLE, (void*)(duint)hEntry, (void*)(duint)visible);
 }
 
 BRIDGE_IMPEXP void GuiMenuSetName(int hMenu, const char* name)
 {
-    _gui_sendmessage(GUI_MENU_SET_NAME, (void*)hMenu, (void*)name);
+    _gui_sendmessage(GUI_MENU_SET_NAME, (void*)(duint)hMenu, (void*)name);
 }
 
 BRIDGE_IMPEXP void GuiMenuSetEntryName(int hEntry, const char* name)
 {
-    _gui_sendmessage(GUI_MENU_SET_ENTRY_NAME, (void*)hEntry, (void*)name);
+    _gui_sendmessage(GUI_MENU_SET_ENTRY_NAME, (void*)(duint)hEntry, (void*)name);
 }
 
 BRIDGE_IMPEXP void GuiMenuSetEntryHotkey(int hEntry, const char* hack)
 {
-    _gui_sendmessage(GUI_MENU_SET_ENTRY_HOTKEY, (void*)hEntry, (void*)hack);
+    _gui_sendmessage(GUI_MENU_SET_ENTRY_HOTKEY, (void*)(duint)hEntry, (void*)hack);
+}
+
+
+BRIDGE_IMPEXP void GuiShowThreads()
+{
+    _gui_sendmessage(GUI_SHOW_THREADS, 0, 0);
 }
 
 BRIDGE_IMPEXP void GuiShowCpu()
@@ -1612,7 +1840,7 @@ BRIDGE_IMPEXP void GuiGetDebuggeeNotes(char** text)
 
 BRIDGE_IMPEXP void GuiDumpAtN(duint va, int index)
 {
-    _gui_sendmessage(GUI_DUMP_AT_N, (void*)va, (void*)index);
+    _gui_sendmessage(GUI_DUMP_AT_N, (void*)va, (void*)(duint)index);
 }
 
 BRIDGE_IMPEXP void GuiDisplayWarning(const char* title, const char* text)
@@ -1627,7 +1855,7 @@ BRIDGE_IMPEXP void GuiRegisterScriptLanguage(SCRIPTTYPEINFO* info)
 
 BRIDGE_IMPEXP void GuiUnregisterScriptLanguage(int id)
 {
-    _gui_sendmessage(GUI_UNREGISTER_SCRIPT_LANG, (void*)id, nullptr);
+    _gui_sendmessage(GUI_UNREGISTER_SCRIPT_LANG, (void*)(duint)id, nullptr);
 }
 
 BRIDGE_IMPEXP void GuiUpdateArgumentWidget()
@@ -1638,7 +1866,7 @@ BRIDGE_IMPEXP void GuiUpdateArgumentWidget()
 
 BRIDGE_IMPEXP void GuiFocusView(int hWindow)
 {
-    _gui_sendmessage(GUI_FOCUS_VIEW, (void*)hWindow, nullptr);
+    _gui_sendmessage(GUI_FOCUS_VIEW, (void*)(duint)hWindow, nullptr);
 }
 
 BRIDGE_IMPEXP bool GuiLoadGraph(BridgeCFGraphList* graph, duint addr)
@@ -1665,6 +1893,11 @@ BRIDGE_IMPEXP void GuiDisableLog()
 BRIDGE_IMPEXP void GuiEnableLog()
 {
     _gui_sendmessage(GUI_SET_LOG_ENABLED, (void*)1, nullptr);
+}
+
+BRIDGE_IMPEXP bool GuiIsLogEnabled()
+{
+    return !!_gui_sendmessage(GUI_IS_LOG_ENABLED, nullptr, nullptr);
 }
 
 BRIDGE_IMPEXP void GuiAddFavouriteTool(const char* name, const char* description)
@@ -1771,6 +2004,21 @@ BRIDGE_IMPEXP void GuiShowReferences()
 BRIDGE_IMPEXP void GuiSelectInSymbolsTab(duint addr)
 {
     _gui_sendmessage(GUI_SELECT_IN_SYMBOLS_TAB, (void*)addr, nullptr);
+}
+
+BRIDGE_IMPEXP void GuiGotoTrace(duint index)
+{
+    _gui_sendmessage(GUI_GOTO_TRACE, (void*)index, nullptr);
+}
+
+BRIDGE_IMPEXP void GuiShowTrace()
+{
+    _gui_sendmessage(GUI_SHOW_TRACE, nullptr, nullptr);
+}
+
+BRIDGE_IMPEXP DWORD GuiGetMainThreadId()
+{
+    return (DWORD)(duint)_gui_sendmessage(GUI_GET_MAIN_THREAD_ID, nullptr, nullptr);
 }
 
 BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvReserved)

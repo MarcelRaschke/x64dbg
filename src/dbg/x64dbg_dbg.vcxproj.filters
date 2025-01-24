@@ -440,9 +440,6 @@
     <ClCompile Include="formatfunctions.cpp">
       <Filter>Source Files\Core</Filter>
     </ClCompile>
-    <ClCompile Include="symcache.cpp">
-      <Filter>Source Files\Symbols</Filter>
-    </ClCompile>
     <ClCompile Include="symbolinfo.cpp">
       <Filter>Source Files\Symbols</Filter>
     </ClCompile>
@@ -460,6 +457,9 @@
     </ClCompile>
     <ClCompile Include="symbolsourcebase.cpp">
       <Filter>Source Files\Symbols</Filter>
+    </ClCompile>
+    <ClCompile Include="_apichecker.c">
+      <Filter>Source Files\Interfaces/Exports</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -877,9 +877,6 @@
     <ClInclude Include="symbolsourcebase.h">
       <Filter>Header Files\Symbols</Filter>
     </ClInclude>
-    <ClInclude Include="symcache.h">
-      <Filter>Header Files\Symbols</Filter>
-    </ClInclude>
     <ClInclude Include="symbolinfo.h">
       <Filter>Header Files\Symbols</Filter>
     </ClInclude>
@@ -903,6 +900,9 @@
     </ClInclude>
     <ClInclude Include="LLVMDemangle\LLVMDemangle.h">
       <Filter>Header Files\Third Party\LLVMDemangle</Filter>
+    </ClInclude>
+    <ClInclude Include="bridgemain.h">
+      <Filter>Header Files\Interfaces/Exports</Filter>
     </ClInclude>
   </ItemGroup>
 </Project>

@@ -7,6 +7,7 @@
 #include <objbase.h>
 #include <shlobj.h>
 #include <psapi.h>
+#include <thread>
 #include "DeviceNameResolver/DeviceNameResolver.h"
 
 /**
@@ -44,7 +45,7 @@ void* emalloc(size_t size, const char* reason)
     if(!a)
     {
         wchar_t sizeString[25];
-        swprintf_s(sizeString, L"%p bytes", size);
+        swprintf_s(sizeString, L"%p bytes", (void*)size);
         MessageBoxW(0, L"Could not allocate memory (minidump will be created)", sizeString, MB_ICONERROR);
         __debugbreak();
         ExitProcess(1);
@@ -216,7 +217,7 @@ bool DirExists(const char* dir)
 \param [in,out] szFileName Buffer of size MAX_PATH.
 \return true if it succeeds, false if it fails.
 */
-bool GetFileNameFromHandle(HANDLE hFile, char* szFileName)
+bool GetFileNameFromHandle(HANDLE hFile, char* szFileName, size_t nCount)
 {
     if(!hFile)
         return false;
@@ -241,11 +242,11 @@ bool GetFileNameFromHandle(HANDLE hFile, char* szFileName)
         utf8.insert(0, R"(\\?\GLOBALROOT)");
     }
 
-    strncpy_s(szFileName, MAX_PATH, utf8.c_str(), _TRUNCATE);
+    strncpy_s(szFileName, nCount, utf8.c_str(), _TRUNCATE);
     return true;
 }
 
-bool GetFileNameFromProcessHandle(HANDLE hProcess, char* szFileName)
+bool GetFileNameFromProcessHandle(HANDLE hProcess, char* szFileName, size_t nCount)
 {
     wchar_t wszDosFileName[MAX_PATH] = L"";
     wchar_t wszFileName[MAX_PATH] = L"";
@@ -260,11 +261,11 @@ bool GetFileNameFromProcessHandle(HANDLE hProcess, char* szFileName)
     else
         result = !!GetModuleFileNameExW(hProcess, 0, wszFileName, _countof(wszFileName));
     if(result)
-        strncpy_s(szFileName, MAX_PATH, StringUtils::Utf16ToUtf8(wszFileName).c_str(), _TRUNCATE);
+        strncpy_s(szFileName, nCount, StringUtils::Utf16ToUtf8(wszFileName).c_str(), _TRUNCATE);
     return result;
 }
 
-bool GetFileNameFromModuleHandle(HANDLE hProcess, HMODULE hModule, char* szFileName)
+bool GetFileNameFromModuleHandle(HANDLE hProcess, HMODULE hModule, char* szFileName, size_t nCount)
 {
     wchar_t wszDosFileName[MAX_PATH] = L"";
     wchar_t wszFileName[MAX_PATH] = L"";
@@ -279,7 +280,7 @@ bool GetFileNameFromModuleHandle(HANDLE hProcess, HMODULE hModule, char* szFileN
     else
         result = !!GetModuleFileNameExW(hProcess, hModule, wszFileName, _countof(wszFileName));
     if(result)
-        strncpy_s(szFileName, MAX_PATH, StringUtils::Utf16ToUtf8(wszFileName).c_str(), _TRUNCATE);
+        strncpy_s(szFileName, nCount, StringUtils::Utf16ToUtf8(wszFileName).c_str(), _TRUNCATE);
     return result;
 }
 
@@ -313,11 +314,8 @@ bool IsWow64()
 
 //Taken from: http://www.cplusplus.com/forum/windows/64088/
 //And: https://codereview.stackexchange.com/a/2917
-bool ResolveShortcut(HWND hwnd, const wchar_t* szShortcutPath, wchar_t* szResolvedPath, size_t nSize)
+bool ResolveShortcut(HWND hwnd, const wchar_t* szShortcutPath, std::wstring & executable, std::wstring & arguments, std::wstring & workingDir)
 {
-    if(szResolvedPath == NULL)
-        return SUCCEEDED(E_INVALIDARG);
-
     //Initialize COM stuff
     if(!SUCCEEDED(CoInitialize(NULL)))
         return false;
@@ -352,7 +350,21 @@ bool ResolveShortcut(HWND hwnd, const wchar_t* szShortcutPath, wchar_t* szResolv
 
                     if(SUCCEEDED(hres) && expandSuccess)
                     {
-                        wcscpy_s(szResolvedPath, nSize, expandedTarget);
+                        executable = expandedTarget;
+
+                        // Extract the arguments
+                        wchar_t linkArgs[MAX_PATH];
+                        if(SUCCEEDED(psl->GetArguments(linkArgs, _countof(linkArgs))))
+                        {
+                            arguments = linkArgs;
+                        }
+
+                        // Extract the working directory
+                        wchar_t linkDir[MAX_PATH];
+                        if(SUCCEEDED(psl->GetWorkingDirectory(linkDir, _countof(linkDir))))
+                        {
+                            workingDir = linkDir;
+                        }
                     }
                 }
             }
@@ -381,4 +393,54 @@ void WaitForMultipleThreadsTermination(const HANDLE* hThread, int count, DWORD t
     WaitForMultipleObjects(count, hThread, TRUE, timeout);
     for(int i = 0; i < count; i++)
         CloseHandle(hThread[i]);
+}
+
+// This implementation supports both conventional single-cpu PC configurations
+// and multi-cpu system on NUMA (Non-uniform_memory_access) architecture
+// Original code from here: https://developercommunity.visualstudio.com/t/hardware-concurrency-returns-an-incorrect-result/350854
+duint GetThreadCount()
+{
+    duint threadCount = std::thread::hardware_concurrency();
+
+    typedef BOOL(WINAPI * GetLogicalProcessorInformationEx_t)(
+        LOGICAL_PROCESSOR_RELATIONSHIP,
+        PSYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX,
+        PDWORD
+    );
+
+    static auto p_GetLogicalProcessorInformationEx = (GetLogicalProcessorInformationEx_t)GetProcAddress(GetModuleHandleW(L"kernel32.dll"), "GetLogicalProcessorInformationEx");
+    if(p_GetLogicalProcessorInformationEx == nullptr)
+    {
+        return threadCount;
+    }
+
+    DWORD length = 0;
+    if(p_GetLogicalProcessorInformationEx(RelationAll, nullptr, &length) || GetLastError() != ERROR_INSUFFICIENT_BUFFER)
+    {
+        return threadCount;
+    }
+
+    std::vector<uint8_t> buffer(length);
+    if(!p_GetLogicalProcessorInformationEx(RelationAll, (PSYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX)buffer.data(), &length))
+    {
+        return threadCount;
+    }
+
+    threadCount = 0;
+    for(DWORD offset = 0; offset < length;)
+    {
+        auto info = (PSYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX)(buffer.data() + offset);
+        if(info->Relationship == RelationProcessorCore)
+        {
+            for(WORD group = 0; group < info->Processor.GroupCount; ++group)
+            {
+                for(KAFFINITY mask = info->Processor.GroupMask[group].Mask; mask != 0; mask >>= 1)
+                {
+                    threadCount += mask & 1;
+                }
+            }
+        }
+        offset += info->Size;
+    }
+    return threadCount;
 }

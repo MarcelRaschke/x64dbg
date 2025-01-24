@@ -5,14 +5,19 @@
  */
 
 #include "debugger.h"
+#include "threading.h"
 
 extern "C" DLL_EXPORT BOOL APIENTRY DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvReserved)
 {
-    if(fdwReason == DLL_PROCESS_ATTACH)
+    switch(fdwReason)
+    {
+    case DLL_PROCESS_ATTACH:
     {
         hInst = hinstDLL;
 
         // Get program directory
+        strcpy_s(szUserDir, StringUtils::Utf16ToUtf8(BridgeUserDirectory()).c_str());
+
         {
             wchar_t wszDir[deflen] = L"";
             if(GetModuleFileNameW(hInst, wszDir, deflen))
@@ -25,9 +30,12 @@ extern "C" DLL_EXPORT BOOL APIENTRY DllMain(HINSTANCE hinstDLL, DWORD fdwReason,
                 szProgramDir[len] = 0;
             }
         }
+    }
 
-        // https://docs.microsoft.com/en-us/windows/win32/api/libloaderapi/nf-libloaderapi-disablethreadlibrarycalls
-        DisableThreadLibraryCalls(hinstDLL);
+    case DLL_THREAD_ATTACH:
+    {
+
+    }
     }
     return TRUE;
 }

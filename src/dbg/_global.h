@@ -11,11 +11,11 @@
 #endif
 #define WINVER _WIN32_WINNT
 
+#ifndef _WIN32_IE
 #define _WIN32_IE 0x0500
+#endif //_WIN32_IE
 
-// Allow including Windows.h without bringing in a redefined and outdated subset of NTSTATUSes.
-// To get NTSTATUS defines, #undef WIN32_NO_STATUS after Windows.h and then #include <ntstatus.h>
-#define WIN32_NO_STATUS
+#include "ntdll/ntdll.h"
 
 #include "../dbg_types.h"
 #include "../dbg_assert.h"
@@ -57,14 +57,15 @@ void setalloctrace(const char* file);
 bool scmp(const char* a, const char* b);
 bool FileExists(const char* file);
 bool DirExists(const char* dir);
-bool GetFileNameFromHandle(HANDLE hFile, char* szFileName);
-bool GetFileNameFromProcessHandle(HANDLE hProcess, char* szFileName);
-bool GetFileNameFromModuleHandle(HANDLE hProcess, HMODULE hModule, char* szFileName);
+bool GetFileNameFromHandle(HANDLE hFile, char* szFileName, size_t nCount);
+bool GetFileNameFromProcessHandle(HANDLE hProcess, char* szFileName, size_t nCount);
+bool GetFileNameFromModuleHandle(HANDLE hProcess, HMODULE hModule, char* szFileName, size_t nCount);
 bool settingboolget(const char* section, const char* name);
 bool IsWow64();
-bool ResolveShortcut(HWND hwnd, const wchar_t* szShortcutPath, wchar_t* szResolvedPath, size_t nSize);
+bool ResolveShortcut(HWND hwnd, const wchar_t* szShortcutPath, std::wstring & executable, std::wstring & arguments, std::wstring & workingDir);
 void WaitForThreadTermination(HANDLE hThread, DWORD timeout = INFINITE);
 void WaitForMultipleThreadsTermination(const HANDLE* hThread, int count, DWORD timeout = INFINITE);
+duint GetThreadCount();
 
 #ifdef _WIN64
 #define ArchValue(x32value, x64value) x64value

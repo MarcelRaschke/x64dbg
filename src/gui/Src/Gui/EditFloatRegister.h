@@ -16,7 +16,7 @@ class EditFloatRegister : public QDialog
     Q_OBJECT
 
 public:
-    explicit EditFloatRegister(int RegisterSize, QWidget* parent = 0);
+    explicit EditFloatRegister(int RegisterSize, QWidget* parent = nullptr);
     void loadData(const char* RegisterData);
     const char* getData() const;
     void selectAllText();
@@ -98,7 +98,7 @@ private:
     void editingLongLongFinishedSlot(size_t offset, QString arg);
 
     Ui::EditFloatRegister* ui;
-    QObject* mutex;
+    QObject* mutex = nullptr;
     char Data[64];
     int RegSize;
 };

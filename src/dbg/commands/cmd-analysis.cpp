@@ -1,5 +1,5 @@
-#include "cmd-analysis.h"
 #include "ntdll/ntdll.h"
+#include "cmd-analysis.h"
 #include "linearanalysis.h"
 #include "memory.h"
 #include "exceptiondirectoryanalysis.h"
@@ -162,7 +162,7 @@ bool cbInstrVirtualmod(int argc, char* argv[])
         return false;
     }
 
-    char modname[256] = "";
+    char modname[MAX_MODULE_SIZE] = "";
     if(ModNameFromAddr(base, modname, true))
         BpEnumAll(cbSetModuleBreakpoints, modname);
 
@@ -500,6 +500,6 @@ bool cbInstrTraceexecute(int argc, char* argv[])
     duint addr;
     if(!valfromstring(argv[1], &addr, false))
         return false;
-    _dbg_dbgtraceexecute(addr);
+    dbgtraceexecute(addr);
     return true;
 }

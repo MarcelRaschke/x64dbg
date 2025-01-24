@@ -1,6 +1,6 @@
 #pragma once
 
-#include "PDBDiaTypes.h"
+#include "pdbdiatypes.h"
 
 #include <vector>
 #include <map>
@@ -10,6 +10,7 @@
 #include <unordered_map>
 #include <atomic>
 
+struct IStream;
 struct IDiaDataSource;
 struct IDiaSession;
 struct IDiaSymbol;

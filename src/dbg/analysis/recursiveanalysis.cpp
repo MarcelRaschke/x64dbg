@@ -59,11 +59,11 @@ void RecursiveAnalysis::SetMarkers()
         duint rangeStart = 0, rangeEnd = 0, rangeInstructionCount = 0;
         for(auto rangeItr = blockRanges.begin(); rangeItr != blockRanges.end(); ++rangeItr)
         {
-            auto disasmLen = [this](duint addr)
+            auto disasmLen = [this](duint addr) -> size_t
             {
-                if(!mCp.Disassemble(addr, translateAddr(addr)))
+                if(!mZydis.Disassemble(addr, translateAddr(addr)))
                     return 1;
-                return mCp.Size();
+                return mZydis.Size();
             };
             const auto & node = *rangeItr->second;
             if(!rangeStart)
@@ -74,7 +74,9 @@ void RecursiveAnalysis::SetMarkers()
             }
             else
             {
+#ifndef ALIGN_UP
 #define ALIGN_UP(Address, Align) (((ULONG_PTR)(Address) + (Align) - 1) & ~((Align) - 1))
+#endif // ALIGN_UP
                 auto nextInstr = rangeEnd + disasmLen(rangeEnd);
                 // The next instruction(s) might be padding to align IP, also allow this case to count as consecutive
                 if(nextInstr == node.start || ((node.start & 0xF) == 0 && ALIGN_UP(nextInstr, 16) == node.start))
@@ -149,6 +151,7 @@ void RecursiveAnalysis::analyzeFunction(duint entryPoint)
     CFGraph graph(entryPoint);
     UintSet visited;
     std::queue<duint> queue;
+    visited.reserve(queue.size());
     queue.push(graph.entryPoint);
     while(!queue.empty())
     {
@@ -170,14 +173,14 @@ void RecursiveAnalysis::analyzeFunction(duint entryPoint)
         {
             if(!inRange(node.end))
             {
-                node.end = mCp.Address();
+                node.end = (duint)mZydis.Address();
                 node.terminal = true;
                 graph.AddNode(node);
                 break;
             }
 
             node.icount++;
-            if(!mCp.Disassemble(node.end, translateAddr(node.end)))
+            if(!mZydis.Disassemble(node.end, translateAddr(node.end)))
             {
                 node.end++;
                 continue;
@@ -186,10 +189,10 @@ void RecursiveAnalysis::analyzeFunction(duint entryPoint)
             //do xref analysis on the instruction
             XREF xref;
             xref.addr = 0;
-            xref.from = mCp.Address();
-            for(auto i = 0; i < mCp.OpCount(); i++)
+            xref.from = (duint)mZydis.Address();
+            for(auto i = 0; i < mZydis.OpCount(); i++)
             {
-                duint dest = mCp.ResolveOpValue(i, [](ZydisRegister)->size_t
+                auto dest = (duint)mZydis.ResolveOpValue(i, [](ZydisRegister) -> uint64_t
                 {
                     return 0;
                 });
@@ -202,23 +205,23 @@ void RecursiveAnalysis::analyzeFunction(duint entryPoint)
             if(xref.addr)
                 mXrefs.push_back(xref);
 
-            if(!mCp.IsNop() && (mCp.IsJump() || mCp.IsLoop())) //non-nop jump
+            if(!mZydis.IsNop() && (mZydis.IsJump() || mZydis.IsLoop())) //non-nop jump
             {
                 //set the branch destinations
-                node.brtrue = mCp.BranchDestination();
-                if(mCp.GetId() != ZYDIS_MNEMONIC_JMP) //unconditional jumps dont have a brfalse
-                    node.brfalse = node.end + mCp.Size();
+                node.brtrue = (duint)mZydis.BranchDestination();
+                if(mZydis.GetId() != ZYDIS_MNEMONIC_JMP) //unconditional jumps dont have a brfalse
+                    node.brfalse = node.end + mZydis.Size();
 
                 //consider register/memory branches as terminal nodes
-                if(mCp.OpCount() && mCp[0].type != ZYDIS_OPERAND_TYPE_IMMEDIATE)
+                if(mZydis.OpCount() && mZydis[0].type != ZYDIS_OPERAND_TYPE_IMMEDIATE)
                 {
                     //jmp ptr [index * sizeof(duint) + switchTable]
-                    if(mCp[0].type == ZYDIS_OPERAND_TYPE_MEMORY && mCp[0].mem.base == ZYDIS_REGISTER_NONE && mCp[0].mem.index != ZYDIS_REGISTER_NONE
-                            && mCp[0].mem.scale == sizeof(duint) && MemIsValidReadPtr(duint(mCp[0].mem.disp.value)))
+                    if(mZydis[0].type == ZYDIS_OPERAND_TYPE_MEMORY && mZydis[0].mem.base == ZYDIS_REGISTER_NONE && mZydis[0].mem.index != ZYDIS_REGISTER_NONE
+                            && mZydis[0].mem.scale == sizeof(duint) && MemIsValidReadPtr(duint(mZydis[0].mem.disp.value)))
                     {
                         Memory<duint*> switchTable(512 * sizeof(duint));
                         duint actualSize, index;
-                        MemRead(duint(mCp[0].mem.disp.value), switchTable(), 512 * sizeof(duint), &actualSize);
+                        MemRead(duint(mZydis[0].mem.disp.value), switchTable(), 512 * sizeof(duint), &actualSize);
                         actualSize /= sizeof(duint);
                         for(index = 0; index < actualSize; index++)
                             if(MemIsCodePage(switchTable()[index], false) == false)
@@ -228,6 +231,8 @@ void RecursiveAnalysis::analyzeFunction(duint entryPoint)
                         {
                             node.brtrue = 0;
                             node.brfalse = 0;
+                            node.exits.reserve(actualSize);
+                            mXrefs.reserve(actualSize);
                             for(index = 0; index < actualSize; index++)
                             {
                                 node.exits.push_back(switchTable()[index]);
@@ -254,17 +259,17 @@ void RecursiveAnalysis::analyzeFunction(duint entryPoint)
 
                 break;
             }
-            if(mCp.IsCall())
+            if(mZydis.IsCall())
             {
                 //TODO: add this to a queue to be analyzed later
             }
-            if(mCp.IsRet())
+            if(mZydis.IsRet())
             {
                 node.terminal = true;
                 graph.AddNode(node);
                 break;
             }
-            node.end += mCp.Size();
+            node.end += mZydis.Size();
         }
     }
     //second pass: split overlapping blocks introduced by backedges
@@ -276,7 +281,7 @@ void RecursiveAnalysis::analyzeFunction(duint entryPoint)
         while(addr < node.end)
         {
             icount++;
-            auto size = mCp.Disassemble(addr, translateAddr(addr)) ? mCp.Size() : 1;
+            auto size = mZydis.Disassemble(addr, translateAddr(addr)) ? mZydis.Size() : 1;
             if(graph.nodes.count(addr + size))
             {
                 node.end = addr;
@@ -309,10 +314,10 @@ void RecursiveAnalysis::analyzeFunction(duint entryPoint)
         auto addr = node.start;
         while(addr <= node.end) //disassemble all instructions
         {
-            auto size = mCp.Disassemble(addr, translateAddr(addr)) ? mCp.Size() : 1;
-            if(mCp.IsCall() && mCp.OpCount()) //call reg / call [reg+X]
+            auto size = mZydis.Disassemble(addr, translateAddr(addr)) ? mZydis.Size() : 1;
+            if(mZydis.IsCall() && mZydis.OpCount()) //call reg / call [reg+X]
             {
-                auto & op = mCp[0];
+                auto & op = mZydis[0];
                 switch(op.type)
                 {
                 case ZYDIS_OPERAND_TYPE_REGISTER:
@@ -548,7 +553,7 @@ void RecursiveAnalysis::dominatorAnalysis(duint entryPoint)
     for(const auto & x : indexToAddress)
     {
         char label[256];
-        sprintf_s(label, "block%p", x.first);
+        sprintf_s(label, "block%p", (void*)x.first);
         LabelSet(x.second, label, false, true);
     }
 }

@@ -35,7 +35,7 @@
 #include "TraceRecord.h"
 #include "recursiveanalysis.h"
 #include "dbghelp_safe.h"
-#include "symcache.h"
+#include "symbolinfo.h"
 
 static bool bOnlyCipAutoComments = false;
 static bool bNoSourceLineAutoComments = false;
@@ -48,7 +48,7 @@ extern "C" DLL_EXPORT duint _dbg_memfindbaseaddr(duint addr, duint* size)
 
 extern "C" DLL_EXPORT bool _dbg_memread(duint addr, unsigned char* dest, duint size, duint* read)
 {
-    return MemRead(addr, dest, size, read, true);
+    return MemRead(addr, dest, size, read);
 }
 
 extern "C" DLL_EXPORT bool _dbg_memwrite(duint addr, const unsigned char* src, duint size, duint* written)
@@ -61,8 +61,8 @@ extern "C" DLL_EXPORT bool _dbg_memmap(MEMMAP* memmap)
     SHARED_ACQUIRE(LockMemoryPages);
 
     int pagecount = (int)memoryPages.size();
-    memset(memmap, 0, sizeof(MEMMAP));
     memmap->count = pagecount;
+    memmap->page = nullptr;
     if(!pagecount)
         return true;
 
@@ -102,8 +102,8 @@ extern "C" DLL_EXPORT bool _dbg_isjumpgoingtoexecute(duint addr)
     unsigned char data[16];
     if(MemRead(addr, data, sizeof(data), nullptr, true))
     {
-        Zydis cp;
-        if(cp.Disassemble(addr, data))
+        Zydis zydis;
+        if(zydis.Disassemble(addr, data))
         {
             CONTEXT ctx;
             memset(&ctx, 0, sizeof(ctx));
@@ -116,7 +116,7 @@ extern "C" DLL_EXPORT bool _dbg_isjumpgoingtoexecute(duint addr)
             auto cflags = ctx.EFlags;
             auto ccx = ctx.Ecx;
 #endif //_WIN64
-            return cp.IsBranchGoingToExecute(cflags, ccx);
+            return zydis.IsBranchGoingToExecute(cflags, ccx);
         }
     }
     return false;
@@ -190,31 +190,35 @@ static bool getLabel(duint addr, char* label, bool noFuncOffset)
     else //no user labels
     {
         DWORD64 displacement = 0;
-        SymbolInfo symInfo;
-
-        bool res;
-        if(noFuncOffset)
-            res = SymbolFromAddressExact(addr, symInfo);
-        else
-            res = SymbolFromAddressExactOrLower(addr, symInfo);
-
-        if(res)
         {
-            displacement = (DWORD64)symInfo.disp;
+            SYMBOLINFOCPP symInfo;
 
-            //auto name = demanglePE32ExternCFunc(symInfo.decoratedName.c_str());
-            if(bUndecorateSymbolNames && !symInfo.undecoratedName.empty())
-                strncpy_s(label, MAX_LABEL_SIZE, symInfo.undecoratedName.c_str(), _TRUNCATE);
+            bool res;
+            if(noFuncOffset)
+                res = SymbolFromAddressExact(addr, &symInfo);
             else
-                strncpy_s(label, MAX_LABEL_SIZE, symInfo.decoratedName.c_str(), _TRUNCATE);
-            retval = !shouldFilterSymbol(label);
-            if(retval && displacement)
+                res = SymbolFromAddressExactOrLower(addr, &symInfo);
+
+            if(res)
             {
-                char temp[32];
-                sprintf_s(temp, "+%llX", displacement);
-                strncat_s(label, MAX_LABEL_SIZE, temp, _TRUNCATE);
+                displacement = (int32_t)(addr - symInfo.addr);
+
+                //auto name = demanglePE32ExternCFunc(symInfo.decoratedName.c_str());
+                if(bUndecorateSymbolNames && *symInfo.undecoratedSymbol != '\0')
+                    strncpy_s(label, MAX_LABEL_SIZE, symInfo.undecoratedSymbol, _TRUNCATE);
+                else
+                    strncpy_s(label, MAX_LABEL_SIZE, symInfo.decoratedSymbol, _TRUNCATE);
+
+                retval = !shouldFilterSymbol(label);
+                if(retval && displacement != 0)
+                {
+                    char temp[32];
+                    sprintf_s(temp, "+%llX", displacement);
+                    strncat_s(label, MAX_LABEL_SIZE, temp, _TRUNCATE);
+                }
             }
         }
+
         if(!retval)  //search for CALL <jmp.&user32.MessageBoxA>
         {
             BASIC_INSTRUCTION_INFO basicinfo;
@@ -224,21 +228,22 @@ static bool getLabel(duint addr, char* label, bool noFuncOffset)
                 duint val = 0;
                 if(MemRead(basicinfo.memory.value, &val, sizeof(val), nullptr, true))
                 {
+                    SYMBOLINFOCPP symInfo;
                     bool res;
                     if(noFuncOffset)
-                        res = SymbolFromAddressExact(val, symInfo);
+                        res = SymbolFromAddressExact(val, &symInfo);
                     else
-                        res = SymbolFromAddressExactOrLower(val, symInfo);
+                        res = SymbolFromAddressExactOrLower(val, &symInfo);
 
                     if(res)
                     {
                         //pSymbol->Name[pSymbol->MaxNameLen - 1] = '\0';
 
                         //auto name = demanglePE32ExternCFunc(pSymbol->Name);
-                        if(bUndecorateSymbolNames && !symInfo.undecoratedName.empty())
-                            _snprintf_s(label, MAX_LABEL_SIZE, _TRUNCATE, "JMP.&%s", symInfo.undecoratedName.c_str());
+                        if(bUndecorateSymbolNames && *symInfo.undecoratedSymbol != '\0')
+                            _snprintf_s(label, MAX_LABEL_SIZE, _TRUNCATE, "JMP.&%s", symInfo.undecoratedSymbol);
                         else
-                            _snprintf_s(label, MAX_LABEL_SIZE, _TRUNCATE, "JMP.&%s", symInfo.decoratedName.c_str());
+                            _snprintf_s(label, MAX_LABEL_SIZE, _TRUNCATE, "JMP.&%s", symInfo.decoratedSymbol);
                         retval = !shouldFilterSymbol(label);
                         if(retval && displacement)
                         {
@@ -303,17 +308,32 @@ static bool getAutoComment(duint addr, String & comment)
         comment = StringUtils::sprintf("%s:%u", actualName, lineNumber);
         retval = true;
     }
+    else
+    {
+        SHARED_ACQUIRE(LockModules);
+        auto modInfo = ModInfoFromAddr(addr);
+        if(modInfo != nullptr)
+        {
+            auto exportInfo = modInfo->findExport(addr - modInfo->base);
+            if(exportInfo != nullptr && exportInfo->forwarded)
+            {
+                comment = StringUtils::sprintf("-> %s", exportInfo->forwardName.c_str());
+                retval = true;
+                dputs(comment.c_str());
+            }
+        }
+    }
 
     DISASM_INSTR instr;
     String temp_string;
     BRIDGE_ADDRINFO newinfo;
     char string_text[MAX_STRING_SIZE] = "";
 
-    Zydis cp;
+    Zydis zydis;
     auto getregs = !bOnlyCipAutoComments || addr == lastContext.cip;
-    disasmget(cp, addr, &instr, getregs);
+    disasmget(zydis, addr, &instr, getregs);
     // Some nop variants have 'operands' that should be ignored
-    if(cp.Success() && !cp.IsNop())
+    if(zydis.Success() && !zydis.IsNop())
     {
         //Ignore register values when not on CIP and OnlyCipAutoComments is enabled: https://github.com/x64dbg/x64dbg/issues/1383
         if(!getregs)
@@ -322,7 +342,7 @@ static bool getAutoComment(duint addr, String & comment)
                 instr.arg[i].value = instr.arg[i].constant;
         }
 
-        if(addr == lastContext.cip && (cp.GetId() == ZYDIS_MNEMONIC_SYSCALL || (cp.GetId() == ZYDIS_MNEMONIC_INT && cp[0].imm.value.u == 0x2e)))
+        if(addr == lastContext.cip && (zydis.GetId() == ZYDIS_MNEMONIC_SYSCALL || (zydis.GetId() == ZYDIS_MNEMONIC_INT && zydis[0].imm.value.u == 0x2e)))
         {
             auto syscallName = SyscallToName((unsigned int)lastContext.cax);
             if(!syscallName.empty())
@@ -347,9 +367,9 @@ static bool getAutoComment(duint addr, String & comment)
             if(instr.arg[i].constant == instr.arg[i].value)  //avoid: call <module.label> ; addr:label
             {
                 auto constant = instr.arg[i].constant;
-                if(instr.arg[i].type == arg_normal && instr.arg[i].value == addr + instr.instr_size && cp.IsCall())
+                if(instr.arg[i].type == arg_normal && instr.arg[i].value == addr + instr.instr_size && zydis.IsCall())
                     temp_string.assign("call $0");
-                else if(instr.arg[i].type == arg_normal && instr.arg[i].value == addr + instr.instr_size && cp.IsJump())
+                else if(instr.arg[i].type == arg_normal && instr.arg[i].value == addr + instr.instr_size && zydis.IsJump())
                     temp_string.assign("jmp $0");
                 else if(instr.type == instr_branch)
                     continue;
@@ -436,7 +456,7 @@ static bool getAutoComment(duint addr, String & comment)
             if(!temp_string.empty())
                 temp_string += ", ";
         };
-        if(*bp.breakCondition)
+        if(!bp.breakCondition.empty())
         {
             next();
             temp_string += GuiTranslateText(QT_TRANSLATE_NOOP("DBG", "breakif"));
@@ -452,10 +472,10 @@ static bool getAutoComment(duint addr, String & comment)
         }
         else //fast resume skips all other steps
         {
-            if(*bp.logText)
+            if(!bp.logText.empty())
             {
                 next();
-                if(*bp.logCondition)
+                if(!bp.logCondition.empty())
                 {
                     temp_string += GuiTranslateText(QT_TRANSLATE_NOOP("DBG", "logif"));
                     temp_string += "(";
@@ -471,10 +491,10 @@ static bool getAutoComment(duint addr, String & comment)
                 temp_string += ")";
             }
 
-            if(*bp.commandText)
+            if(!bp.commandText.empty())
             {
                 next();
-                if(*bp.commandCondition)
+                if(!bp.commandCondition.empty())
                 {
                     temp_string += GuiTranslateText(QT_TRANSLATE_NOOP("DBG", "cmdif"));
                     temp_string += "(";
@@ -802,13 +822,14 @@ extern "C" DLL_EXPORT int _dbg_getbplist(BPXTYPE type, BPMAP* bpmap)
 {
     if(!bpmap)
         return 0;
+
+    bpmap->count = 0;
+    bpmap->bp = nullptr;
+
     std::vector<BREAKPOINT> list;
     int bpcount = BpGetList(&list);
     if(bpcount == 0)
-    {
-        bpmap->count = 0;
         return 0;
-    }
 
     int retcount = 0;
     std::vector<BRIDGEBP> bridgeList;
@@ -847,10 +868,7 @@ extern "C" DLL_EXPORT int _dbg_getbplist(BPXTYPE type, BPMAP* bpmap)
         retcount++;
     }
     if(!retcount)
-    {
-        bpmap->count = retcount;
-        return retcount;
-    }
+        return 0;
     bpmap->count = retcount;
     bpmap->bp = (BRIDGEBP*)BridgeAlloc(sizeof(BRIDGEBP) * retcount);
     for(int i = 0; i < retcount; i++)
@@ -863,12 +881,12 @@ extern "C" DLL_EXPORT duint _dbg_getbranchdestination(duint addr)
     unsigned char data[MAX_DISASM_BUFFER];
     if(!MemIsValidReadPtr(addr, true) || !MemRead(addr, data, sizeof(data)))
         return 0;
-    Zydis cp;
-    if(!cp.Disassemble(addr, data))
+    Zydis zydis;
+    if(!zydis.Disassemble(addr, data))
         return 0;
-    if(cp.IsBranchType(Zydis::BTJmp | Zydis::BTCall | Zydis::BTLoop | Zydis::BTXbegin))
+    if(zydis.IsBranchType(Zydis::BTJmp | Zydis::BTCall | Zydis::BTLoop | Zydis::BTXbegin))
     {
-        auto opValue = cp.ResolveOpValue(0, [](ZydisRegister reg) -> size_t
+        auto opValue = (duint)zydis.ResolveOpValue(0, [](ZydisRegister reg) -> uint64_t
         {
             switch(reg)
             {
@@ -931,10 +949,10 @@ extern "C" DLL_EXPORT duint _dbg_getbranchdestination(duint addr)
                 return 0;
             }
         });
-        if(cp.OpCount() && cp[0].type == ZYDIS_OPERAND_TYPE_MEMORY)
+        if(zydis.OpCount() && zydis[0].type == ZYDIS_OPERAND_TYPE_MEMORY)
         {
             auto const tebseg = ArchValue(ZYDIS_REGISTER_FS, ZYDIS_REGISTER_GS);
-            if(cp[0].mem.segment == tebseg)
+            if(zydis[0].mem.segment == tebseg)
                 opValue += duint(GetTEBLocation(hActiveThread));
             if(MemRead(opValue, &opValue, sizeof(opValue)))
                 return opValue;
@@ -942,7 +960,7 @@ extern "C" DLL_EXPORT duint _dbg_getbranchdestination(duint addr)
         else
             return opValue;
     }
-    if(cp.IsRet())
+    if(zydis.IsRet())
     {
         auto csp = lastContext.csp;
         duint dest = 0;
@@ -996,7 +1014,7 @@ extern "C" DLL_EXPORT duint _dbg_sendmessage(DBGMSG type, void* param1, void* pa
 
     case DBG_SCRIPT_RUN:
     {
-        scriptrun((int)(duint)param1);
+        scriptrun((int)(duint)param1, param2 != nullptr);
     }
     break;
 
@@ -1049,16 +1067,32 @@ extern "C" DLL_EXPORT duint _dbg_sendmessage(DBGMSG type, void* param1, void* pa
     break;
 
     case DBG_SYMBOL_ENUM:
-    {
-        SYMBOLCBINFO* cbInfo = (SYMBOLCBINFO*)param1;
-        SymEnum(cbInfo->base, cbInfo->cbSymbolEnum, cbInfo->user);
-    }
-    break;
-
     case DBG_SYMBOL_ENUM_FROMCACHE:
     {
         SYMBOLCBINFO* cbInfo = (SYMBOLCBINFO*)param1;
-        SymEnumFromCache(cbInfo->base, cbInfo->cbSymbolEnum, cbInfo->user);
+        if(cbInfo->base == -1)
+        {
+            SHARED_ACQUIRE(LockModules);
+            auto info = ModInfoFromAddr(cbInfo->start);
+            if(info != nullptr && cbInfo->end >= info->base && cbInfo->end < info->base + info->size)
+            {
+                auto beginRva = cbInfo->start - info->base;
+                auto endRva = cbInfo->end - info->base;
+                if(beginRva > endRva)
+                {
+                    return false;
+                }
+                return SymEnum(info->base, cbInfo->cbSymbolEnum, cbInfo->user, beginRva, endRva, cbInfo->symbolMask);
+            }
+            else
+            {
+                return false;
+            }
+        }
+        else
+        {
+            return SymEnum(cbInfo->base, cbInfo->cbSymbolEnum, cbInfo->user, 0, -1, SYMBOL_MASK_ALL);
+        }
     }
     break;
 
@@ -1098,12 +1132,12 @@ extern "C" DLL_EXPORT duint _dbg_sendmessage(DBGMSG type, void* param1, void* pa
         SetEngineVariable(UE_ENGINE_SET_DEBUG_PRIVILEGE, settingboolget("Engine", "EnableDebugPrivilege"));
         SetEngineVariable(UE_ENGINE_SAFE_ATTACH, settingboolget("Engine", "SafeAttach"));
         SetEngineVariable(UE_ENGINE_MEMBP_ALT, settingboolget("Engine", "MembpAlt"));
+        SetEngineVariable(UE_ENGINE_DISABLE_ASLR, settingboolget("Engine", "DisableAslr"));
         bOnlyCipAutoComments = settingboolget("Disassembler", "OnlyCipAutoComments");
         bNoSourceLineAutoComments = settingboolget("Disassembler", "NoSourceLineAutoComments");
         bListAllPages = settingboolget("Engine", "ListAllPages");
         bUndecorateSymbolNames = settingboolget("Engine", "UndecorateSymbolNames");
         bEnableSourceDebugging = settingboolget("Engine", "EnableSourceDebugging");
-        bTraceRecordEnabledDuringTrace = settingboolget("Engine", "TraceRecordEnabledDuringTrace");
         bSkipInt3Stepping = settingboolget("Engine", "SkipInt3Stepping");
         bIgnoreInconsistentBreakpoints = settingboolget("Engine", "IgnoreInconsistentBreakpoints");
         bNoForegroundWindow = settingboolget("Gui", "NoForegroundWindow");
@@ -1111,7 +1145,7 @@ extern "C" DLL_EXPORT duint _dbg_sendmessage(DBGMSG type, void* param1, void* pa
         bNoWow64SingleStepWorkaround = settingboolget("Engine", "NoWow64SingleStepWorkaround");
         bQueryWorkingSet = settingboolget("Misc", "QueryWorkingSet");
         bForceLoadSymbols = settingboolget("Misc", "ForceLoadSymbols");
-        bPidTidInHex = settingboolget("Gui", "PidTidInHex");
+        bTruncateBreakpointLogs = settingboolget("Engine", "TruncateBreakpointLogs");
         stackupdatesettings();
 
         duint setting;
@@ -1185,6 +1219,23 @@ extern "C" DLL_EXPORT duint _dbg_sendmessage(DBGMSG type, void* param1, void* pa
             unknownExceptionsFilter.logException = true;
             unknownExceptionsFilter.handledBy = ExceptionHandledBy::Debuggee;
             dbgaddexceptionfilter(unknownExceptionsFilter);
+        }
+
+        // check if we need to change the main window title
+        bool bNewWindowLongPath = settingboolget("Gui", "WindowLongPath");
+        if(bWindowLongPath != bNewWindowLongPath)
+        {
+            bWindowLongPath = bNewWindowLongPath;
+            if(DbgIsDebugging())
+            {
+                duint addr = 0;
+                SELECTIONDATA selection;
+                if(GuiSelectionGet(GUI_DISASSEMBLY, &selection))
+                    addr = selection.start;
+                else
+                    addr = GetContextDataEx(hActiveThread, UE_CIP);
+                DebugUpdateTitleAsync(addr, false);
+            }
         }
 
         if(BridgeSettingGet("Symbols", "CachePath", settingText.data()))
@@ -1326,7 +1377,7 @@ extern "C" DLL_EXPORT duint _dbg_sendmessage(DBGMSG type, void* param1, void* pa
     {
         BREAKPOINT bp;
         if(BpGet((duint)param1, BPNORMAL, 0, &bp))
-            return !(duint)bp.enabled;
+            return (duint)!bp.enabled;
         return (duint)false;
     }
     break;
@@ -1395,6 +1446,7 @@ extern "C" DLL_EXPORT duint _dbg_sendmessage(DBGMSG type, void* param1, void* pa
 
         if(info->refcount == 0)
         {
+            info->references = nullptr;
             return false;
         }
         else
@@ -1461,7 +1513,7 @@ extern "C" DLL_EXPORT duint _dbg_sendmessage(DBGMSG type, void* param1, void* pa
 
     case DBG_GET_STRING_AT:
     {
-        return disasmgetstringatwrapper(duint(param1), (char*)param2);
+        return disasmgetstringatwrapper(duint(param1), (char*)param2, true);
     }
     break;
 
@@ -1525,7 +1577,7 @@ extern "C" DLL_EXPORT duint _dbg_sendmessage(DBGMSG type, void* param1, void* pa
     case DBG_SELCHANGED:
     {
         PLUG_CB_SELCHANGED plugSelChanged;
-        plugSelChanged.hWindow = (int)param1;
+        plugSelChanged.hWindow = (int)(duint)param1;
         plugSelChanged.VA = (duint)param2;
         plugincbcall(CB_SELCHANGED, &plugSelChanged);
     }
@@ -1557,7 +1609,7 @@ extern "C" DLL_EXPORT duint _dbg_sendmessage(DBGMSG type, void* param1, void* pa
 
     case DBG_GET_PEB_ADDRESS:
     {
-        auto ProcessId = DWORD(param1);
+        auto ProcessId = (DWORD)(duint)param1;
         if(ProcessId == fdProcessInfo->dwProcessId)
             return (duint)GetPEBLocation(fdProcessInfo->hProcess);
         auto hProcess = TitanOpenProcess(PROCESS_QUERY_INFORMATION, false, ProcessId);
@@ -1573,7 +1625,7 @@ extern "C" DLL_EXPORT duint _dbg_sendmessage(DBGMSG type, void* param1, void* pa
 
     case DBG_GET_TEB_ADDRESS:
     {
-        auto ThreadId = DWORD(param1);
+        auto ThreadId = (DWORD)(duint)param1;
         auto tebAddress = ThreadGetLocalBase(ThreadId);
         if(tebAddress)
             return tebAddress;
@@ -1634,6 +1686,18 @@ extern "C" DLL_EXPORT duint _dbg_sendmessage(DBGMSG type, void* param1, void* pa
             return (DEBUG_ENGINE)setting;
         }();
         return debugEngine;
+    }
+    break;
+
+    case DBG_GET_SYMBOL_INFO_AT:
+    {
+        return SymbolFromAddressExact((duint)param1, (SYMBOLINFO*)param2);
+    }
+    break;
+
+    case DBG_XREF_ADD_MULTI:
+    {
+        return XrefAddMulti((const XREF_EDGE*)param1, (duint)param2);
     }
     break;
     }

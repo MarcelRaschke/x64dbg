@@ -6,7 +6,7 @@ class CPURegistersView : public RegistersView
 {
     Q_OBJECT
 public:
-    CPURegistersView(CPUWidget* parent = 0);
+    CPURegistersView(CPUWidget* parent = nullptr);
 
 public slots:
     void setRegister(REGISTER_NAME reg, duint value);
@@ -22,6 +22,9 @@ protected slots:
     void onIncrementx87StackAction();
     void onDecrementx87StackAction();
     void onModifyAction();
+    void onIncrementAction();
+    void onDecrementAction();
+    void onZeroAction();
     void onToggleValueAction();
     void onUndoAction();
     void onCopyPreviousAction();
@@ -33,7 +36,7 @@ protected slots:
     void onRemoveHardware();
     void onHighlightSlot();
     void ModifyFields(const QString & title, STRING_VALUE_TABLE_t* table, SIZE_T size);
-    void disasmSelectionChangedSlot(dsint va);
+    void disasmSelectionChangedSlot(duint va);
 
 private:
     void CreateDumpNMenu(QMenu* dumpMenu);
@@ -43,6 +46,9 @@ private:
     // context menu actions
     QAction* mFollowInDump;
     QAction* wCM_Modify;
+    QAction* wCM_Increment;
+    QAction* wCM_Decrement;
+    QAction* wCM_Zero;
     QAction* wCM_ToggleValue;
     QAction* wCM_CopyPrevious;
     QAction* wCM_Undo;

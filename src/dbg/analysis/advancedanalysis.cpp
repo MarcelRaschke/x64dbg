@@ -10,7 +10,7 @@ AdvancedAnalysis::AdvancedAnalysis(duint base, duint size, bool dump)
     : Analysis(base, size),
       mDump(dump)
 {
-    mEncMap = new byte[size];
+    mEncMap = new uint8_t[size];
     memset(mEncMap, 0, size);
 }
 
@@ -37,7 +37,7 @@ void AdvancedAnalysis::SetMarkers()
             FileHelper::WriteAllText(StringUtils::sprintf("cfgraph_%p.dot", function.entryPoint), function.ToDot());
 
     duint encMapSize;
-    byte* buffer = (byte*)EncodeMapGetBuffer(mBase, &encMapSize, true);
+    uint8_t* buffer = (uint8_t*)EncodeMapGetBuffer(mBase, &encMapSize, true);
     memcpy(buffer, mEncMap, encMapSize);
     EncodeMapReleaseBuffer(buffer);
 
@@ -60,8 +60,8 @@ void AdvancedAnalysis::SetMarkers()
         for(const auto & node : function.nodes)
         {
             icount += node.second.icount;
-            start = min(node.second.start, start);
-            end = max(node.second.end, end);
+            start = std::min(node.second.start, start);
+            end = std::max(node.second.end, end);
         }
         if(!FunctionAdd(start, end, false, icount))
         {
@@ -79,6 +79,7 @@ void AdvancedAnalysis::analyzeFunction(duint entryPoint, bool writedata)
     CFGraph graph(entryPoint);
     UintSet visited;
     std::queue<duint> queue;
+    visited.reserve(queue.size());
     mEntryPoints.insert(entryPoint);
     queue.push(graph.entryPoint);
     while(!queue.empty())
@@ -93,10 +94,10 @@ void AdvancedAnalysis::analyzeFunction(duint entryPoint, bool writedata)
         while(true)
         {
             node.icount++;
-            if(!mCp.Disassemble(node.end, translateAddr(node.end)))
+            if(!mZydis.Disassemble(node.end, translateAddr(node.end)))
             {
                 if(writedata)
-                    mEncMap[node.end - mBase] = (byte)enc_byte;
+                    mEncMap[node.end - mBase] = (uint8_t)enc_byte;
                 // If the next byte would be out of the memory range finish this node
                 if(!inRange(node.end + 1))
                 {
@@ -108,25 +109,25 @@ void AdvancedAnalysis::analyzeFunction(duint entryPoint, bool writedata)
             }
             // If the memory range doesn't fit the entire instruction
             // mark it as bytes and finish this node
-            if(!inRange(node.end + mCp.Size() - 1))
+            if(!inRange(node.end + mZydis.Size() - 1))
             {
                 duint remainingSize = mBase + mSize - node.end;
-                memset(&mEncMap[node.end - mBase], (byte)enc_byte, remainingSize);
+                memset(&mEncMap[node.end - mBase], (uint8_t)enc_byte, remainingSize);
                 graph.AddNode(node);
                 break;
             }
             if(writedata)
             {
-                mEncMap[node.end - mBase] = (byte)enc_code;
-                for(int i = 1; i < mCp.Size(); i++)
-                    mEncMap[node.end - mBase + i] = (byte)enc_middle;
+                mEncMap[node.end - mBase] = (uint8_t)enc_code;
+                for(size_t i = 1; i < mZydis.Size(); i++)
+                    mEncMap[node.end - mBase + i] = (uint8_t)enc_middle;
             }
-            if(mCp.IsJump() || mCp.IsLoop()) //jump
+            if(mZydis.IsJump() || mZydis.IsLoop()) //jump
             {
                 //set the branch destinations
-                node.brtrue = mCp.BranchDestination();
-                if(mCp.GetId() != ZYDIS_MNEMONIC_JMP) //unconditional jumps dont have a brfalse
-                    node.brfalse = node.end + mCp.Size();
+                node.brtrue = (duint)mZydis.BranchDestination();
+                if(mZydis.GetId() != ZYDIS_MNEMONIC_JMP) //unconditional jumps dont have a brfalse
+                    node.brfalse = node.end + mZydis.Size();
 
                 //add node to the function graph
                 graph.AddNode(node);
@@ -139,26 +140,26 @@ void AdvancedAnalysis::analyzeFunction(duint entryPoint, bool writedata)
 
                 break;
             }
-            if(mCp.IsCall()) //call
+            if(mZydis.IsCall()) //call
             {
                 //TODO: handle no return
-                duint target = mCp.BranchDestination();
+                auto target = (duint)mZydis.BranchDestination();
                 if(inRange(target) && mEntryPoints.find(target) == mEntryPoints.end())
                     mCandidateEPs.insert(target);
             }
-            if(mCp.IsRet()) //return
+            if(mZydis.IsRet()) //return
             {
                 node.terminal = true;
                 graph.AddNode(node);
                 break;
             }
             // If this instruction finishes the memory range, end the loop for this entry point
-            if(!inRange(node.end + mCp.Size()))
+            if(!inRange(node.end + mZydis.Size()))
             {
                 graph.AddNode(node);
                 break;
             }
-            node.end += mCp.Size();
+            node.end += mZydis.Size();
         }
     }
     mFunctions.push_back(graph);
@@ -172,20 +173,20 @@ void AdvancedAnalysis::linearXrefPass()
 
     for(auto addr = mBase; addr < mBase + mSize;)
     {
-        if(!mCp.Disassemble(addr, translateAddr(addr)))
+        if(!mZydis.Disassemble(addr, translateAddr(addr)))
         {
             addr++;
             continue;
         }
-        addr += mCp.Size();
+        addr += mZydis.Size();
 
         XREF xref;
         xref.valid = true;
         xref.addr = 0;
-        xref.from = mCp.Address();
-        for(auto i = 0; i < mCp.OpCount(); i++)
+        xref.from = (duint)mZydis.Address();
+        for(auto i = 0; i < mZydis.OpCount(); i++)
         {
-            duint dest = mCp.ResolveOpValue(i, [](ZydisRegister)->size_t
+            auto dest = (duint)mZydis.ResolveOpValue(i, [](ZydisRegister) -> uint64_t
             {
                 return 0;
             });
@@ -197,9 +198,9 @@ void AdvancedAnalysis::linearXrefPass()
         }
         if(xref.addr)
         {
-            if(mCp.IsCall())
+            if(mZydis.IsCall())
                 xref.type = XREF_CALL;
-            else if(mCp.IsJump())
+            else if(mZydis.IsJump())
                 xref.type = XREF_JMP;
             else
                 xref.type = XREF_DATA;
@@ -227,10 +228,10 @@ void AdvancedAnalysis::findInvalidXrefs()
     {
         duint jmps = 0, calls = 0;
         duint addr = vec.first;
-        byte desttype = mEncMap[vec.first - mBase];
+        auto desttype = mEncMap[vec.first - mBase];
         for(auto & xref : vec.second)
         {
-            byte type = mEncMap[xref.from - mBase];
+            auto type = mEncMap[xref.from - mBase];
             if(desttype == enc_code && type != enc_unknown && type != enc_code)
                 xref.valid = false;
             else if(desttype == enc_middle)
@@ -269,16 +270,16 @@ void AdvancedAnalysis::writeDataXrefs()
         {
             if(xref.type == XREF_DATA && xref.valid)
             {
-                if(!mCp.Disassemble(xref.from, translateAddr(xref.from)))
+                if(!mZydis.Disassemble(xref.from, translateAddr(xref.from)))
                 {
                     xref.valid = false;
                     continue;
                 }
-                auto opcode = mCp.GetId();
+                auto opcode = mZydis.GetId();
                 bool isfloat = isFloatInstruction(opcode);
-                for(auto i = 0; i < mCp.OpCount(); i++)
+                for(auto i = 0; i < mZydis.OpCount(); i++)
                 {
-                    auto & op = mCp[i];
+                    auto & op = mZydis[i];
                     ENCODETYPE type = enc_unknown;
 
                     //Todo: Analyze op type and set correct type
@@ -318,21 +319,21 @@ void AdvancedAnalysis::writeDataXrefs()
                         }
                         if(size == 1)
                         {
-                            mEncMap[offset] = (byte)type;
+                            mEncMap[offset] = (uint8_t)type;
                         }
                         else
                         {
                             // Check if the entire referenced data fits into the memory range
                             if((offset + size) <= mSize)
                             {
-                                mEncMap[offset] = (byte)type;
-                                memset(mEncMap + offset + 1, (byte)enc_middle, size - 1);
+                                mEncMap[offset] = (uint8_t)type;
+                                memset(mEncMap + offset + 1, (uint8_t)enc_middle, size - 1);
                             }
                             else
                             {
                                 // If it doesn't fit, mark the remaining places as bytes
                                 duint remainingSize = mSize - offset;
-                                memset(mEncMap + offset, (byte)enc_byte, size);
+                                memset(mEncMap + offset, (uint8_t)enc_byte, size);
                             }
                         }
                     }
@@ -344,6 +345,7 @@ void AdvancedAnalysis::writeDataXrefs()
 
 void AdvancedAnalysis::findFuzzyEntryPoints()
 {
+    mCandidateEPs.reserve(mFuzzyEPs.size());
     for(const auto & entryPoint : mFuzzyEPs)
     {
         mCandidateEPs.insert(entryPoint);
@@ -392,6 +394,7 @@ void AdvancedAnalysis::analyzeCandidateFunctions(bool writedata)
         pendingEPs.clear();
         if(mCandidateEPs.size() == 0)
             return;
+        pendingEPs.reserve(mCandidateEPs.size());
         for(const auto & entryPoint : mCandidateEPs)
         {
             pendingEPs.insert(entryPoint);

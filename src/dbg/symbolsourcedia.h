@@ -35,12 +35,12 @@ private: //symbols
 
     struct AddrIndex
     {
-        duint addr;
+        duint rva;
         size_t index;
 
         bool operator<(const AddrIndex & b) const
         {
-            return addr < b.addr;
+            return rva < b.rva;
         }
     };
 
@@ -87,7 +87,7 @@ private:
             if(c1 == '\0')
                 return 0;
         s1--, s2--;
-        while((c1 = tolower(*s1++)) == (c2 = tolower(*s2++)))
+        while((c1 = StringUtils::ToLower(*s1++)) == (c2 = StringUtils::ToLower(*s2++)))
             if(c1 == '\0')
                 return 0;
         return c1 - c2;
@@ -116,7 +116,7 @@ public:
 
     virtual bool findSymbolExactOrLower(duint rva, SymbolInfo & symInfo) override;
 
-    virtual void enumSymbols(const CbEnumSymbol & cbEnum) override;
+    virtual void enumSymbols(const CbEnumSymbol & cbEnum, duint beginRva, duint endRva) override;
 
     virtual bool findSourceLineInfo(duint rva, LineInfo & lineInfo) override;
 

@@ -83,22 +83,30 @@ bool disasmfast(const unsigned char* data, duint addr, BASIC_INSTRUCTION_INFO* b
 {
     if(!data || !basicinfo)
         return false;
-    Zydis cp;
-    cp.Disassemble(addr, data, MAX_DISASM_BUFFER);
-    if(trydisasmfast(data, addr, basicinfo, cp.Success() ? cp.Size() : 1))
+    Zydis zydis;
+    zydis.Disassemble(addr, data, MAX_DISASM_BUFFER);
+    if(trydisasmfast(data, addr, basicinfo, zydis.Success() ? zydis.Size() : 1))
         return true;
-    if(!cp.Success())
+    if(!zydis.Success())
     {
         strcpy_s(basicinfo->instruction, "???");
         basicinfo->size = 1;
         return false;
     }
-    fillbasicinfo(&cp, basicinfo);
+    fillbasicinfo(&zydis, basicinfo);
     return true;
+}
+
+void disasm(Zydis & zydis, duint addr)
+{
+    unsigned char data[MAX_DISASM_BUFFER];
+    if(MemRead(addr, data, sizeof(data)))
+        zydis.Disassemble(addr, data);
 }
 
 bool disasmfast(duint addr, BASIC_INSTRUCTION_INFO* basicinfo, bool cache)
 {
+    // unsigned int because of data encoding (likely could be a bit smaller though, this is 4*16=64 bytes)
     unsigned int data[16];
     if(!MemRead(addr, data, sizeof(data), nullptr, cache))
         return false;

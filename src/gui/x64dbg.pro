@@ -15,12 +15,12 @@ CONFIG(debug, debug|release) {
 }
 
 !contains(QMAKE_HOST.arch, x86_64) {
-    X64_BIN_DIR = ../../bin/x32$${DIR_SUFFIX}      # Relative BIN path, 32-bit
-    X64_GEN_DIR = ../gui_build/out32$${DIR_SUFFIX} # QMake temporary generated files, placed inside the build folder. (OBJ, UI, MOC)
+    X64_BIN_DIR = $$PWD/../../bin/x32$${DIR_SUFFIX}      # Relative BIN path, 32-bit
+    X64_GEN_DIR = $$PWD/../gui_build/out32$${DIR_SUFFIX} # QMake temporary generated files, placed inside the build folder. (OBJ, UI, MOC)
     TARGET = x32gui                  # Build x32gui
 } else {
-    X64_BIN_DIR = ../../bin/x64$${DIR_SUFFIX}      # Relative BIN path, 64-bit
-    X64_GEN_DIR = ../gui_build/out64$${DIR_SUFFIX} # QMake temporary generated files, placed inside the build folder. (OBJ, UI, MOC)
+    X64_BIN_DIR = $$PWD/../../bin/x64$${DIR_SUFFIX}      # Relative BIN path, 64-bit
+    X64_GEN_DIR = $$PWD/../gui_build/out64$${DIR_SUFFIX} # QMake temporary generated files, placed inside the build folder. (OBJ, UI, MOC)
     TARGET = x64gui                  # Build x64gui
 }
 
@@ -49,7 +49,7 @@ QMAKE_CXXFLAGS_RELEASE += -Zi   # Compiler
 QMAKE_LFLAGS_RELEASE += /DEBUG  # Linker
 
 # Build as a library
-DEFINES += BUILD_LIB NOMINMAX
+DEFINES += BUILD_LIB NOMINMAX X64DBG
 TEMPLATE = lib
 
 ##
@@ -66,8 +66,7 @@ INCLUDEPATH += \
     Src/Global \
     Src/Utils \
     Src/ThirdPartyLibs/ldconvert \
-    ../zydis_wrapper \
-    ../zydis_wrapper/zydis/include
+    ../zydis_wrapper
 
 # Resources, sources, headers, and forms
 RESOURCES += \
@@ -76,13 +75,19 @@ RESOURCES += \
 SOURCES += \
     Src/BasicView/StdIconSearchListView.cpp \
     Src/BasicView/StdIconTable.cpp \
+    Src/Disassembler/QZydis.cpp \
     Src/Gui/CPURegistersView.cpp \
     Src/Gui/RichTextItemDelegate.cpp \
     Src/Gui/SystemBreakpointScriptDialog.cpp \
     Src/Imports.cpp \
+    Src/Tracer/TraceDump.cpp \
+    Src/Tracer/TraceFileDump.cpp \
     Src/Tracer/TraceInfoBox.cpp \
+    Src/Tracer/TraceManager.cpp \
     Src/Tracer/TraceRegisters.cpp \
+    Src/Tracer/TraceStack.cpp \
     Src/Tracer/TraceWidget.cpp \
+    Src/Tracer/TraceXrefBrowseDialog.cpp \
     Src/Utils/CommonActions.cpp \
     Src/main.cpp \
     Src/Gui/MainWindow.cpp \
@@ -91,7 +96,6 @@ SOURCES += \
     Src/BasicView/Disassembly.cpp \
     Src/BasicView/HexDump.cpp \
     Src/BasicView/AbstractTableView.cpp \
-    Src/Disassembler/QBeaEngine.cpp \
     Src/Disassembler/ZydisTokenizer.cpp \
     Src/Memory/MemoryPage.cpp \
     Src/Bridge/Bridge.cpp \
@@ -195,16 +199,21 @@ SOURCES += \
     Src/BasicView/StdTableSearchList.cpp \
     Src/Utils/BackgroundFlickerThread.cpp
 
-
 HEADERS += \
     Src/BasicView/StdIconSearchListView.h \
     Src/BasicView/StdIconTable.h \
+    Src/Disassembler/QZydis.h \
     Src/Gui/CPURegistersView.h \
     Src/Gui/RichTextItemDelegate.h \
     Src/Gui/SystemBreakpointScriptDialog.h \
+    Src/Tracer/TraceDump.h \
+    Src/Tracer/TraceFileDump.h \
     Src/Tracer/TraceInfoBox.h \
+    Src/Tracer/TraceManager.h \
     Src/Tracer/TraceRegisters.h \
+    Src/Tracer/TraceStack.h \
     Src/Tracer/TraceWidget.h \
+    Src/Tracer/TraceXrefBrowseDialog.h \
     Src/Utils/CommonActions.h \
     Src/main.h \
     Src/Gui/MainWindow.h \
@@ -213,7 +222,6 @@ HEADERS += \
     Src/BasicView/Disassembly.h \
     Src/BasicView/HexDump.h \
     Src/BasicView/AbstractTableView.h \
-    Src/Disassembler/QBeaEngine.h \
     Src/Disassembler/ZydisTokenizer.h \
     Src/Memory/MemoryPage.h \
     Src/Bridge/Bridge.h \
@@ -325,7 +333,6 @@ HEADERS += \
     Src/BasicView/StdTableSearchList.h \
     Src/Utils/MethodInvoker.h \
     Src/Utils/BackgroundFlickerThread.h
-    
 
 FORMS += \
     Src/Gui/SystemBreakpointScriptDialog.ui \
@@ -364,7 +371,8 @@ FORMS += \
     Src/Gui/MessagesBreakpoints.ui \
     Src/Gui/AboutDialog.ui \
     Src/Gui/ComboBoxDialog.ui \
-    Src/Tracer/TraceWidget.ui
+    Src/Tracer/TraceWidget.ui \
+    Src/Tracer/TraceXrefBrowseDialog.ui
 
 ##
 ## Libraries

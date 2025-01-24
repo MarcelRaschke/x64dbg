@@ -2,6 +2,7 @@
 
 #include "command.h"
 
+bool cbShowThreadId(int argc, char* argv[]);
 bool cbDebugDisasm(int argc, char* argv[]);
 bool cbDebugDump(int argc, char* argv[]);
 bool cbDebugStackDump(int argc, char* argv[]);
@@ -22,3 +23,4 @@ bool cbInstrFoldDisassembly(int argc, char* argv[]);
 bool cbDebugUpdateTitle(int argc, char* argv[]);
 bool cbShowReferences(int argc, char* argv[]);
 bool cbSymbolsFollow(int argc, char* argv[]);
+bool cbGotoTrace(int argc, char* argv[]);

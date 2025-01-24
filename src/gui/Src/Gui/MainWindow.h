@@ -3,8 +3,10 @@
 #include <QMainWindow>
 #include "Imports.h"
 
+class QMutex;
 class QDragEnterEvent;
 class QDropEvent;
+class QMutex;
 class CloseDialog;
 class CommandLineEdit;
 class MHTabWidget;
@@ -31,7 +33,7 @@ class SettingsDialog;
 class SimpleTraceDialog;
 class MRUList;
 class UpdateChecker;
-class TraceWidget;
+class TraceManager;
 
 namespace Ui
 {
@@ -43,7 +45,7 @@ class MainWindow : public QMainWindow
     Q_OBJECT
 
 public:
-    explicit MainWindow(QWidget* parent = 0);
+    explicit MainWindow(QWidget* parent = nullptr);
     ~MainWindow();
 
     void setupCommandBar();
@@ -78,19 +80,15 @@ public slots:
     void displayBreakpointWidget();
     void updateWindowTitleSlot(QString filename);
     void runSlot();
-    void execTRBit();
-    void execTRByte();
-    void execTRWord();
-    void execTRNone();
+    void displayThreadsWidget();
     void displayCpuWidget();
     void displayCpuWidgetShowCpu();
     void displaySymbolWidget();
     void displaySourceViewWidget();
     void displayReferencesWidget();
-    void displayThreadsWidget();
     void displayVariables();
     void displayGraphWidget();
-    void displayRunTrace();
+    void displayTraceWidget();
     void openSettings();
     void openAppearance();
     void openCalculator();
@@ -128,6 +126,7 @@ public slots:
     void refreshShortcuts();
     void openShortcuts();
     void changeTopmost(bool checked);
+    void mnemonicHelp();
     void donate();
     void blog();
     void reportBug();
@@ -175,7 +174,7 @@ private:
     CalculatorDialog* mCalculatorDialog;
     HandlesView* mHandlesView;
     NotesManager* mNotesManager;
-    TraceWidget* mTraceWidget;
+    TraceManager* mTraceWidget;
     SimpleTraceDialog* mSimpleTraceDialog;
     UpdateChecker* mUpdateChecker;
     DebugStatusLabel* mStatusLabel;
@@ -210,12 +209,15 @@ private:
     //menu api
     struct MenuEntryInfo
     {
-        QAction* mAction;
-        int hEntry;
-        int hParentMenu;
+        MenuEntryInfo() = default;
+
+        QAction* mAction = nullptr;
+        int hEntry = -1;
+        int hParentMenu = -1;
         QString hotkey;
         QString hotkeyId;
-        bool hotkeyGlobal;
+        bool hotkeyGlobal = false;
+        bool deleted = false;
     };
 
     struct MenuInfo
@@ -226,22 +228,27 @@ private:
         {
         }
 
-        QWidget* parent;
-        QMenu* mMenu;
-        int hMenu;
-        int hParentMenu;
-        bool globalMenu;
+        MenuInfo() = default;
+
+        QWidget* parent = nullptr;
+        QMenu* mMenu = nullptr;
+        int hMenu = -1;
+        int hParentMenu = -1;
+        bool globalMenu = false;
+        bool deleted = false;
     };
 
+    QMutex* mMenuMutex = nullptr;
     int hEntryMenuPool;
     QList<MenuEntryInfo> mEntryList;
     QList<MenuInfo> mMenuList;
 
     void initMenuApi();
-    const MenuInfo* findMenu(int hMenu);
+    MenuInfo* findMenu(int hMenu);
+    MenuEntryInfo* findMenuEntry(int hEntry);
     QString nestedMenuDescription(const MenuInfo* menu);
     QString nestedMenuEntryDescription(const MenuEntryInfo & entry);
-    void clearMenuHelper(int hMenu);
+    void clearMenuHelper(int hMenu, bool markAsDeleted);
     void clearMenuImpl(int hMenu, bool erase);
 
     bool bCanClose;

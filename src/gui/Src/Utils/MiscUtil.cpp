@@ -144,6 +144,8 @@ QString getSymbolicNameStr(duint addr)
         finalText = QString("%1.%2").arg(moduleText).arg(addrText);
     else if(bHasLabel) //<label>
         finalText = QString("<%1>").arg(labelText);
+    else if(addr == 0)
+        finalText = addrText;
     else
     {
         finalText = addrText;
@@ -159,13 +161,25 @@ QString getSymbolicNameStr(duint addr)
             if(c.isPrint() || c.isSpace())
                 finalText += QString(" L'%1'").arg(EscapeCh(c));
         }
+        else if((addr & 0xFFFFFFFFF0000000ull) == 0xC0000000)
+        {
+            auto format = QString("{ntstatus@%1}").arg(ToHexString(addr));
+            if(DbgFunctions()->StringFormatInline(format.toUtf8().constData(), sizeof(string), string))
+            {
+                auto colon = strchr(string, ':');
+                if(colon)
+                    *colon = '\0';
+                finalText += " ";
+                finalText += string;
+            }
+        }
     }
     return finalText;
 }
 
 QIcon getFileIcon(QString file)
 {
-    SHFILEINFO info;
+    SHFILEINFOW info;
     if(SHGetFileInfoW((const wchar_t*)file.utf16(), 0, &info, sizeof(info), SHGFI_ICON) == 0)
         return QIcon(); //API error
     QIcon result = QIcon(QtWin::fromHICON(info.hIcon));
@@ -176,7 +190,14 @@ QIcon getFileIcon(QString file)
 //Export table in CSV. TODO: Display a dialog where the user choose what column to export and in which encoding
 bool ExportCSV(dsint rows, dsint columns, std::vector<QString> headers, std::function<QString(dsint, dsint)> getCellContent)
 {
-    BrowseDialog browse(nullptr, QApplication::translate("ExportCSV", "Export data in CSV format"), QApplication::translate("ExportCSV", "Enter the CSV file name to export"), QApplication::translate("ExportCSV", "CSV files (*.csv);;All files (*.*)"), QApplication::applicationDirPath() + QDir::separator() + "db", true);
+    BrowseDialog browse(
+        nullptr,
+        QApplication::translate("ExportCSV", "Export data in CSV format"),
+        QApplication::translate("ExportCSV", "Enter the CSV file name to export"),
+        QApplication::translate("ExportCSV", "CSV files (*.csv);;All files (*.*)"),
+        getDbPath("export.csv", true),
+        true
+    );
     browse.setWindowIcon(DIcon("database-export"));
     if(browse.exec() == QDialog::Accepted)
     {
@@ -289,6 +310,12 @@ bool ExportCSV(dsint rows, dsint columns, std::vector<QString> headers, std::fun
         return false;
 }
 
+static bool allowIcons()
+{
+    duint setting = 0;
+    return !BridgeSettingGetUint("Gui", "NoIcons", &setting) || !setting;
+}
+
 static bool allowSeasons()
 {
     srand(GetTickCount());
@@ -330,6 +357,9 @@ QIcon DIconHelper(QString name)
 {
     if(name.endsWith(".png"))
         name = name.left(name.length() - 4);
+    static bool icons = allowIcons();
+    if(!icons)
+        return QIcon();
     static bool seasons = allowSeasons();
     static bool christmas = isChristmas();
     static bool easter = isEaster();
@@ -341,4 +371,37 @@ QIcon DIconHelper(QString name)
             name = QString("easter%1").arg(rand() % 8 + 1);
     }
     return QIcon::fromTheme(name);
+}
+
+QString getDbPath(const QString & filename, bool addDateTimeSuffix)
+{
+    auto path = QString("%1/db").arg(QString::fromWCharArray(BridgeUserDirectory()));
+    if(!filename.isEmpty())
+    {
+        path += '/';
+        path += filename;
+        // Add a date suffix before the extension
+        if(addDateTimeSuffix)
+        {
+            auto extensionIdx = path.lastIndexOf('.');
+            if(extensionIdx == -1)
+            {
+                extensionIdx = path.length();
+            }
+            auto suffix = "-" + isoDateTime();
+            path.insert(extensionIdx, suffix);
+        }
+    }
+    return QDir::toNativeSeparators(path);
+}
+
+QString mainModuleName(bool extension)
+{
+    auto base = DbgEval("mod.main()");
+    char name[MAX_MODULE_SIZE] = "";
+    if(base && DbgFunctions()->ModNameFromAddr(base, name, extension))
+    {
+        return name;
+    }
+    return QString();
 }

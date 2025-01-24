@@ -14,7 +14,7 @@ class SettingsDialog : public QDialog
     Q_OBJECT
 
 public:
-    explicit SettingsDialog(QWidget* parent = 0);
+    explicit SettingsDialog(QWidget* parent = nullptr);
     ~SettingsDialog();
     void SaveSettings();
     unsigned int lastException;
@@ -42,6 +42,7 @@ private slots:
     void on_chkDllUnloadSystem_stateChanged(int arg1);
     void on_chkThreadStart_stateChanged(int arg1);
     void on_chkThreadEnd_stateChanged(int arg1);
+    void on_chkThreadNameSet_stateChanged(int arg1);
     void on_chkDebugStrings_stateChanged(int arg1);
     //Engine tab
     void on_radioUnsigned_clicked();
@@ -56,13 +57,13 @@ private slots:
     void on_chkEnableSourceDebugging_stateChanged(int arg1);
     void on_chkDisableDatabaseCompression_stateChanged(int arg1);
     void on_chkSaveDatabaseInProgramDirectory_stateChanged(int arg1);
-    void on_chkTraceRecordEnabledDuringTrace_stateChanged(int arg1);
     void on_chkSkipInt3Stepping_toggled(bool checked);
     void on_chkNoScriptTimeout_stateChanged(int arg1);
     void on_chkIgnoreInconsistentBreakpoints_toggled(bool checked);
     void on_chkHardcoreThreadSwitchWarning_toggled(bool checked);
     void on_chkVerboseExceptionLogging_toggled(bool checked);
     void on_chkNoWow64SingleStepWorkaround_toggled(bool checked);
+    void on_chkDisableAslr_toggled(bool checked);
     void on_spinMaxTraceCount_valueChanged(int arg1);
     void on_spinAnimateInterval_valueChanged(int arg1);
     //Exception tab
@@ -99,16 +100,18 @@ private slots:
     void on_chkSaveColumnOrder_stateChanged(int arg1);
     void on_chkSaveLoadTabOrder_stateChanged(int arg1);
     void on_chkNoCloseDialog_toggled(bool checked);
-    void on_chkPidTidInHex_clicked(bool checked);
     void on_chkSidebarWatchLabels_stateChanged(int arg1);
     void on_chkNoForegroundWindow_toggled(bool checked);
     void on_chkShowExitConfirmation_toggled(bool checked);
     void on_chkDisableAutoComplete_toggled(bool checked);
     void on_chkAutoFollowInStack_toggled(bool checked);
     void on_chkHideSeasonalIcons_toggled(bool checked);
+    void on_chkQtHighDpiScaling_toggled(bool checked);
+    void on_chkWindowLongPath_toggled(bool checked);
+    void on_chkNoIcons_toggled(bool checked);
+    void on_chkAutoTraceDump_toggled(bool checked);
     //Misc tab
     void on_chkSetJIT_stateChanged(int arg1);
-    void on_chkConfirmBeforeAtt_stateChanged(int arg1);
     void on_editSymbolStore_textEdited(const QString & arg1);
     void on_editSymbolCache_textEdited(const QString & arg1);
     void on_chkUtf16LogRedirect_toggled(bool checked);
@@ -118,8 +121,6 @@ private slots:
     void on_chkQueryProcessCookie_toggled(bool checked);
     void on_chkQueryWorkingSet_toggled(bool checked);
     void on_chkTransparentExceptionStepping_toggled(bool checked);
-
-    void on_chkQtHighDpiScaling_toggled(bool checked);
 
 private:
     //enums
@@ -172,85 +173,90 @@ private:
         }
     };
 
+    // Unfortunately there are multiple sources of truth for the defaults.
+    // Some are in Configuration::Configuration and some in _exports.cpp
+    // case DBG_SETTINGS_UPDATED
     struct SettingsStruct
     {
         //Event Tab
-        bool eventSystemBreakpoint;
-        bool eventExitBreakpoint;
-        bool eventTlsCallbacks;
-        bool eventTlsCallbacksSystem;
-        bool eventEntryBreakpoint;
-        bool eventDllEntry;
-        bool eventDllEntrySystem;
-        bool eventThreadEntry;
-        bool eventDllLoad;
-        bool eventDllUnload;
-        bool eventDllLoadSystem;
-        bool eventDllUnloadSystem;
-        bool eventThreadStart;
-        bool eventThreadEnd;
-        bool eventDebugStrings;
+        bool eventSystemBreakpoint = true;
+        bool eventExitBreakpoint = false;
+        bool eventTlsCallbacks = true;
+        bool eventTlsCallbacksSystem = true;
+        bool eventEntryBreakpoint = true;
+        bool eventDllEntry = false;
+        bool eventDllEntrySystem = false;
+        bool eventThreadEntry = false;
+        bool eventDllLoad = false;
+        bool eventDllUnload = false;
+        bool eventDllLoadSystem = false;
+        bool eventDllUnloadSystem = false;
+        bool eventThreadStart = false;
+        bool eventThreadEnd = false;
+        bool eventThreadNameSet = false;
+        bool eventDebugStrings = false;
         //Engine Tab
-        CalcType engineCalcType;
-        DEBUG_ENGINE engineType;
-        BreakpointType engineBreakpointType;
-        bool engineUndecorateSymbolNames;
-        bool engineEnableDebugPrivilege;
-        bool engineEnableSourceDebugging;
-        bool engineSaveDatabaseInProgramDirectory;
-        bool engineDisableDatabaseCompression;
-        bool engineEnableTraceRecordDuringTrace;
-        bool engineSkipInt3Stepping;
-        bool engineNoScriptTimeout;
-        bool engineIgnoreInconsistentBreakpoints;
-        bool engineHardcoreThreadSwitchWarning;
-        bool engineVerboseExceptionLogging;
-        bool engineNoWow64SingleStepWorkaround;
-        int engineMaxTraceCount;
-        int engineAnimateInterval;
+        CalcType engineCalcType = calc_unsigned;
+        DEBUG_ENGINE engineType = DebugEngineTitanEngine;
+        BreakpointType engineBreakpointType = break_int3short;
+        bool engineUndecorateSymbolNames = true;
+        bool engineEnableDebugPrivilege = true;
+        bool engineEnableSourceDebugging = false;
+        bool engineSaveDatabaseInProgramDirectory = false;
+        bool engineDisableDatabaseCompression = false;
+        bool engineSkipInt3Stepping = false;
+        bool engineNoScriptTimeout = false;
+        bool engineIgnoreInconsistentBreakpoints = false;
+        bool engineHardcoreThreadSwitchWarning = false;
+        bool engineVerboseExceptionLogging = true;
+        bool engineNoWow64SingleStepWorkaround = false;
+        bool engineDisableAslr = false;
+        int engineMaxTraceCount = 50000;
+        int engineAnimateInterval = 50;
         //Exception Tab
-        QList<ExceptionFilter>* exceptionFilters;
+        QList<ExceptionFilter>* exceptionFilters = nullptr;
         //Disasm Tab
-        bool disasmArgumentSpaces;
-        bool disasmMemorySpaces;
-        bool disasmHidePointerSizes;
-        bool disasmHideNormalSegments;
-        bool disasmUppercase;
-        bool disasmOnlyCipAutoComments;
-        bool disasmTabBetweenMnemonicAndArguments;
+        bool disasmArgumentSpaces = false;
+        bool disasmMemorySpaces = false;
+        bool disasmHidePointerSizes = false;
+        bool disasmHideNormalSegments = false;
+        bool disasmUppercase = false;
+        bool disasmOnlyCipAutoComments = false;
+        bool disasmTabBetweenMnemonicAndArguments = false;
         bool disasmNoHighlightOperands;
-        bool disasmNoCurrentModuleText;
+        bool disasmNoCurrentModuleText = false;
         bool disasmPermanentHighlightingMode;
-        bool disasm0xPrefixValues;
-        bool disasmNoBranchDisasmPreview;
-        bool disasmNoSourceLineAutoComments;
-        bool disasmAssembleOnDoubleClick;
-        int disasmMaxModuleSize;
+        bool disasm0xPrefixValues = false;
+        bool disasmNoBranchDisasmPreview = false;
+        bool disasmNoSourceLineAutoComments = false;
+        bool disasmAssembleOnDoubleClick = false;
+        int disasmMaxModuleSize = -1;
         //Gui Tab
-        bool guiFpuRegistersLittleEndian;
-        bool guiSaveColumnOrder;
-        bool guiNoCloseDialog;
-        bool guiPidTidInHex;
-        bool guiSidebarWatchLabels;
-        bool guiNoForegroundWindow;
-        bool guiLoadSaveTabOrder;
-        bool guiShowGraphRva;
-        bool guiGraphZoomMode;
-        bool guiShowExitConfirmation;
-        bool guiDisableAutoComplete;
-        bool guiAutoFollowInStack;
-        bool guiHideSeasonalIcons;
-        bool guiEnableQtHighDpiScaling;
+        bool guiFpuRegistersLittleEndian = false;
+        bool guiSaveColumnOrder = false;
+        bool guiNoCloseDialog = false;
+        bool guiSidebarWatchLabels = false;
+        bool guiNoForegroundWindow = true;
+        bool guiLoadSaveTabOrder = true;
+        bool guiShowGraphRva = false;
+        bool guiGraphZoomMode = true;
+        bool guiShowExitConfirmation = true;
+        bool guiDisableAutoComplete = false;
+        bool guiAutoFollowInStack = false;
+        bool guiHideSeasonalIcons = false;
+        bool guiEnableQtHighDpiScaling = true;
+        bool guiEnableWindowLongPath = false;
+        bool guiNoIcons = false;
+        bool guiAutoTraceDump = false;
         //Misc Tab
-        bool miscSetJIT;
-        bool miscSetJITAuto;
-        bool miscSymbolStore;
-        bool miscSymbolCache;
-        bool miscUtf16LogRedirect;
-        bool miscUseLocalHelpFile;
-        bool miscQueryProcessCookie;
-        bool miscQueryWorkingSet;
-        bool miscTransparentExceptionStepping;
+        bool miscSetJIT = false;
+        bool miscSymbolStore = false;
+        bool miscSymbolCache = false;
+        bool miscUtf16LogRedirect = false;
+        bool miscUseLocalHelpFile = false;
+        bool miscQueryProcessCookie = false;
+        bool miscQueryWorkingSet = false;
+        bool miscTransparentExceptionStepping = true;
     };
 
     //variables
@@ -259,7 +265,6 @@ private:
     QList<ExceptionFilter> realExceptionFilters;
     std::unordered_map<duint, const char*> exceptionNames;
     bool bJitOld;
-    bool bJitAutoOld;
     bool bGuiOptionsUpdated;
     bool bTokenizerConfigUpdated;
     bool bDisableAutoCompleteUpdated;

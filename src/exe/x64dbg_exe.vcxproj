@@ -20,6 +20,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="crashdump.cpp" />
+    <ClCompile Include="signaturecheck.cpp" />
     <ClCompile Include="x64dbg_exe.cpp" />
   </ItemGroup>
   <ItemGroup>
@@ -27,6 +28,7 @@
     <ClInclude Include="icon.h" />
     <ClInclude Include="LoadResourceString.h" />
     <ClInclude Include="resource.h" />
+    <ClInclude Include="signaturecheck.h" />
     <ClInclude Include="strings.h" />
   </ItemGroup>
   <ItemGroup>
@@ -124,7 +126,7 @@
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <ClCompile>
       <PreprocessorDefinitions>WIN32;NDEBUG;_WINDOWS;_USRDLL;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
+      <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
       <WarningLevel>Level3</WarningLevel>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
     </ClCompile>
@@ -138,6 +140,9 @@
       <AdditionalManifestDependencies>
       </AdditionalManifestDependencies>
       <LargeAddressAware>true</LargeAddressAware>
+      <DelayLoadDLLs>user32.dll;wintrust.dll;x32bridge.dll</DelayLoadDLLs>
+      <ModuleDefinitionFile>signaturecheck.def</ModuleDefinitionFile>
+      <AdditionalDependencies>Wintrust.lib;kernel32.lib;user32.lib;gdi32.lib;winspool.lib;comdlg32.lib;advapi32.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;odbc32.lib;odbccp32.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
@@ -156,12 +161,14 @@
       <ProgramDatabaseFile>$(TargetDir)$(TargetName)_exe.pdb</ProgramDatabaseFile>
       <AdditionalManifestDependencies>
       </AdditionalManifestDependencies>
+      <ModuleDefinitionFile>signaturecheck.def</ModuleDefinitionFile>
+      <AdditionalDependencies>Wintrust.lib;kernel32.lib;user32.lib;gdi32.lib;winspool.lib;comdlg32.lib;advapi32.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;odbc32.lib;odbccp32.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <ClCompile>
       <PreprocessorDefinitions>WIN32;NDEBUG;_WINDOWS;_USRDLL;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
+      <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
       <WarningLevel>Level3</WarningLevel>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
     </ClCompile>
@@ -173,6 +180,9 @@
       <ProgramDatabaseFile>$(TargetDir)$(TargetName)_exe.pdb</ProgramDatabaseFile>
       <AdditionalManifestDependencies>
       </AdditionalManifestDependencies>
+      <DelayLoadDLLs>user32.dll;wintrust.dll;x64bridge.dll</DelayLoadDLLs>
+      <ModuleDefinitionFile>signaturecheck.def</ModuleDefinitionFile>
+      <AdditionalDependencies>Wintrust.lib;kernel32.lib;user32.lib;gdi32.lib;winspool.lib;comdlg32.lib;advapi32.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;odbc32.lib;odbccp32.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
@@ -190,6 +200,8 @@
       <ProgramDatabaseFile>$(TargetDir)$(TargetName)_exe.pdb</ProgramDatabaseFile>
       <AdditionalManifestDependencies>
       </AdditionalManifestDependencies>
+      <ModuleDefinitionFile>signaturecheck.def</ModuleDefinitionFile>
+      <AdditionalDependencies>Wintrust.lib;kernel32.lib;user32.lib;gdi32.lib;winspool.lib;comdlg32.lib;advapi32.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;odbc32.lib;odbccp32.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
